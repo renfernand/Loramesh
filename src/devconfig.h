@@ -8,7 +8,7 @@
 #define ROUTER 0
 
 //define se vai usar ou nao o Display Oled da placa 
-#define DISPLAY_ENABLE 1
+#define DISPLAY_ENABLE 0
 
 #ifndef LED_BUILTIN
 //#define LED_BUILTIN 13

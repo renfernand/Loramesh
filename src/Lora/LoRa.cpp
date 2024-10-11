@@ -4,6 +4,8 @@
 
 #if defined ( WIFI_LoRa_32_V3 )
 SX1262 radio = new Module(SS,DIO0,RST_LoRa,BUSY_LoRa);
+#else //defined ( WIFI_LoRa_32_V2 )
+SX1276 radio = new Module(SS, DIO0, RST_LoRa, DIO1);
 #endif
 
 char buf [10];
@@ -12,7 +14,11 @@ bool newvalue=0;
 int packetSize = 0;
 char frame[50];
 
+// save transmission states between loops
+int transmissionState = RADIOLIB_ERR_NONE;
 
+// flag to indicate transmission or reception state
+bool transmitFlag = false;
 
 // registers
 #define REG_FIFO                 0x00
@@ -43,7 +49,7 @@ char frame[50];
 #define REG_SYNC_WORD            0x39
 #define REG_DIO_MAPPING_1        0x40
 #define REG_VERSION              0x42
-#define REG_PaDac				         0x4d//add REG_PaDac
+#define REG_PaDac				 0x4d//add REG_PaDac
 
 // modes
 #define MODE_LONG_RANGE_MODE     0x80
@@ -56,13 +62,10 @@ char frame[50];
 // PA config
 //#define PA_BOOST                 0x80
 //#define RFO                      0x70
-
 // IRQ masks
-#if defined ( WIFI_LoRa_32_V2 )
 #define IRQ_TX_DONE_MASK           0x08
 #define IRQ_PAYLOAD_CRC_ERROR_MASK 0x20
 #define IRQ_RX_DONE_MASK           0x40
-#endif
 
 /*!
  * RegInvertIQ
@@ -87,8 +90,6 @@ char frame[50];
 
 #define MAX_PKT_LENGTH           255
 
-
-
 LoRaClass::LoRaClass() :
   _spiSettings(8E6, MSBFIRST, SPI_MODE0),
   _ss(LORA_DEFAULT_SS_PIN), _reset(LORA_DEFAULT_RESET_PIN), _dio0(LORA_DEFAULT_DIO0_PIN),
@@ -101,37 +102,9 @@ LoRaClass::LoRaClass() :
   setTimeout(0);
 }
 
-int LoRaClass::beginV3(long frequency){
-
- #if defined ( WIFI_LoRa_32_V3 )
- 		SPI.begin(SCK,MISO,MOSI,SS);
-    /*int16_t begin(float freq = 434.0, float bw = 125.0, uint8_t sf = 9, uint8_t cr = 7, 
-                    uint8_t syncWord = RADIOLIB_SX126X_SYNC_WORD_PRIVATE, int8_t power = 10, 
-                    uint16_t preambleLength = 8, float tcxoVoltage = 1.6, bool useRegulatorLDO = false);
-     */ 
-   int state = radio.begin(LORA_FREQUENCY_V3,LORA_BW_V3,LORA_SF,LORA_CR,RADIOLIB_SX126X_SYNC_WORD_PRIVATE, 
-                             LORA_POWER, 8, 1.6, false);
-	
-  if (state == RADIOLIB_ERR_NONE)
-	   Serial.println("Success!!!!");
-	else {
-	   Serial.print("failed, code =");
-	   Serial.println(state);
-	   while(true);
-	} 
-  
-  radio.setFrequency(frequency);
-  //radio.setDataRate(LORA_DATARATE);
-  radio.setBandwidth(LORA_BW_V3);
-  radio.setSpreadingFactor(LORA_SF);
-  radio.setOutputPower(LORA_POWER);
-#endif
-
-  return 1;
-}
-
+#if 0
 int LoRaClass::beginV2(long frequency,bool PABOOST){
-#if defined(WIFI_LoRa_32_V2)
+
  // setup pins
   pinMode(_ss, OUTPUT);
   pinMode(_reset, OUTPUT);
@@ -177,16 +150,69 @@ int LoRaClass::beginV2(long frequency,bool PABOOST){
   disableCrc();
   crc();
   idle();
-#endif
+
   return 1;
+}
+#endif
+
+// flag to indicate that a packet was sent or received
+volatile bool operationDone = false;
+
+void setFlag(void) {
+  // we sent or received  packet, set the flag
+  operationDone = true;
 }
 
 int LoRaClass::begin(long frequency,bool PABOOST)
 {
   #if defined( WIFI_LoRa_32_V3 ) 
-    beginV3(frequency);
+      SPI.begin(SCK,MISO,MOSI,SS);
+      /*int16_t begin(float freq = 434.0, float bw = 125.0, uint8_t sf = 9, uint8_t cr = 7, 
+                      uint8_t syncWord = RADIOLIB_SX126X_SYNC_WORD_PRIVATE, int8_t power = 10, 
+                      uint16_t preambleLength = 8, float tcxoVoltage = 1.6, bool useRegulatorLDO = false);
+        */ 
+      int state = radio.begin(LORA_FREQUENCY_V3,LORA_BW_V3,LORA_SF,LORA_CR,RADIOLIB_SX126X_SYNC_WORD_PRIVATE, 
+                                LORA_POWER, 8, 1.6, false);
+
+      if (state == RADIOLIB_ERR_NONE)
+        Serial.println("Success!!!!");
+      else {
+        Serial.print("failed, code =");
+        Serial.println(state);
+        while(true);
+      } 
+
+      radio.setFrequency(frequency);
+      //radio.setDataRate(LORA_DATARATE);
+      radio.setBandwidth(LORA_BW_V3);
+      radio.setSpreadingFactor(LORA_SF);
+      radio.setOutputPower(LORA_POWER);
+
   #else //( WIFI_LoRa_32_V2 ) 
-    beginV2(frequency,PABOOST); 
+  int state = radio.begin();
+
+  // set the function that will be called
+  // when new packet is received
+  radio.setDio0Action(setFlag, RISING);
+
+#if ROUTER
+    // send the first packet on this node
+    //sprintf(frame,"%s%d",frame1,count1);
+    //count1++;
+    //transmissionState = radio.startTransmit(frame);
+    //transmitFlag = true;
+#else
+    // start listening for LoRa packets on this node
+    state = radio.startReceive();
+    if (state == RADIOLIB_ERR_NONE) {
+      Serial.println(F("success!"));
+    } else {
+      Serial.print(F("failed, code "));
+      Serial.println(state);
+      while (true) { delay(10); }
+    }
+#endif
+
   #endif
 
   return 1;
@@ -210,14 +236,8 @@ int LoRaClass::beginPacket(int implicitHeader)
     explicitHeaderMode();
   }
   // reset FIFO address and paload length
- #if defined(WIFI_LoRa_32_V3)
   writeRegister(REG_FIFO_ADDR_PTR, 0);
   writeRegister(REG_PAYLOAD_LENGTH, 0);
- #else
-  writeRegister(REG_FIFO_ADDR_PTR, 0);
-  writeRegister(REG_PAYLOAD_LENGTH, 0);
- #endif 
-
   return 1;
 }
 
@@ -225,32 +245,17 @@ int LoRaClass::endPacket(bool async)
 {
   // put in TX mode
   writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_TX);
-  log_i("write1");
+
   if (async) {
     // grace time is required for the radio
-    log_i("write2");
     delayMicroseconds(150);
   } else {
     // wait for TX done
-    log_i("write2");
-    //V3 -  
-#if defined( WIFI_LoRa_32_V3 )    
-    while ((readRegister(REG_IRQ_FLAGS) & RADIOLIB_SX126X_IRQ_TX_DONE) == 0) {
-      log_i("write3");
-      yield();
-    }
-    // clear IRQ's
-    log_i("write4");
-    writeRegister(REG_IRQ_FLAGS, RADIOLIB_SX126X_IRQ_TX_DONE);
-#else
     while ((readRegister(REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK) == 0) {
-      log_i("write3");
       yield();
     }
     // clear IRQ's
     writeRegister(REG_IRQ_FLAGS, IRQ_TX_DONE_MASK);
-#endif
-
   }
 
   return 1;
@@ -270,33 +275,8 @@ int LoRaClass::parsePacket(int size)
 
   // clear IRQ's
   writeRegister(REG_IRQ_FLAGS, irqFlags);
-//RADIOLIB_SX126X_IRQ_RX_DONE
-#if defined(WIFI_LoRa_32_V3)
-  if ((irqFlags & RADIOLIB_SX126X_IRQ_RX_DONE) && (irqFlags & RADIOLIB_SX126X_IRQ_CRC_ERR) == 0) {
 
-    // received a packet
-    _packetIndex = 0;
-    // read packet length
-    if (_implicitHeaderMode) {
-      packetLength = readRegister(REG_PAYLOAD_LENGTH);
-    } else {
-      packetLength = readRegister(REG_RX_NB_BYTES);
-    }
-    // set FIFO address to current RX address
-    writeRegister(REG_FIFO_ADDR_PTR, readRegister(REG_FIFO_RX_CURRENT_ADDR));
-    // put in standby mode
-    idle();
-  }
-  else if (readRegister(REG_OP_MODE) != (MODE_LONG_RANGE_MODE | MODE_RX_SINGLE)) {
-    // not currently in RX mode
-    // reset FIFO address
-    writeRegister(REG_FIFO_ADDR_PTR, 0);
-    // put in single RX mode
-    writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_RX_SINGLE);
-  }
-#else
   if ((irqFlags & IRQ_RX_DONE_MASK) && (irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
-
     // received a packet
     _packetIndex = 0;
     // read packet length
@@ -317,9 +297,6 @@ int LoRaClass::parsePacket(int size)
     // put in single RX mode
     writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_RX_SINGLE);
   }
-
-#endif
-
   return packetLength;
 }
 
@@ -670,11 +647,7 @@ void LoRaClass::handleDio0Rise()
   int irqFlags = readRegister(REG_IRQ_FLAGS);
   // clear IRQ's
   writeRegister(REG_IRQ_FLAGS, irqFlags);
-#if defined(WIFI_LoRa_32_V3) 
-  if ((irqFlags & RADIOLIB_SX126X_IRQ_CRC_ERR) == 0) {
-#else
   if ((irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
-#endif    
     // received a packet
     _packetIndex = 0;
     // read packet length
@@ -716,103 +689,23 @@ void LoRaClass::onDio0Rise()
 
 LoRaClass LoRa;
 
-
-void LoRaClass::SendFrame2(String data,size_t len)
-{
-  String var1;
-  char buf[10];
-
-#if  defined ( WIFI_LoRa_32_V3 )
-  //int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
-  int16_t ret = radio.transmit(data);
-  Serial.print("transmited ");
-  Serial.print(var1);
-  Serial.print(" ret=");
-  Serial.println(ret);
-
-#else  //WIFI_LoRa_32_V2
-  // send packet
-  LoRa.beginPacket();
-  /*
-  * LoRa.setTxPower(txPower,RFOUT_pin);
-  * txPower -- 0 ~ 20
-  * RFOUT_pin could be RF_PACONFIG_PASELECT_PABOOST or RF_PACONFIG_PASELECT_RFO
-  *   - RF_PACONFIG_PASELECT_PABOOST -- LoRa single output via PABOOST, maximum output 20dBm
-  *   - RF_PACONFIG_PASELECT_RFO     -- LoRa single output via RFO_HF / RFO_LF, maximum output 14dBm
-  */
-  LoRa.setTxPower(14,RF_PACONFIG_PASELECT_PABOOST);
-  LoRa.print(data);
-  LoRa.endPacket();
-#endif
-
-}
-uint8_t LoRaClass::calc_crc(const char* data,size_t len, uint8_t *pframe){
-    char buf[50];
-    uint16_t count=0;
-    uint8_t* pucAux=(uint8_t *)&count;
-    uint8_t i;
-
-    for (i=0;i<len;i++){
-        count += data[i];
-        pframe[i] = data[i];
-    }
-    pframe[i++] = (char) *pucAux++;
-    pframe[i++] = (char) *pucAux;
-
-    return i;
-}
-
-void LoRaClass::SendFrame(const char* data,size_t len)
-{
-  String var1;
-  uint8_t length;
-  uint8_t frame[50];
-  uint8_t addr;
-  int16_t ret;
-  //length = calc_crc(data,len,frame);
-  //addr = frame[1];
-  //log_i("Frame[%d]=%2x %2x %2x %2x %2x %2x %2x",length, frame[0],frame[1],frame[2],frame[3],frame[4],frame[5],frame[6]);
-#if  defined ( WIFI_LoRa_32_V3 )
-  #if 0
-    ret = radio.transmit(frame,length,addr);
-  #else
-    // send packet
-    //radio.startTransmit(frame,length,addr);  //Todo!!!!Parece que nao faz nada
-    //LoRa.setTxPower(14,RF_PACONFIG_PASELECT_PABOOST);
-    //ret = radio.transmit(frame,length,addr); //Todo!!!!Parece que nao faz nada
-    //radio.finishTransmit();  
-
-    LoRa.beginPacket();
-    log_i("begin packet");
-    LoRa.print(data);
-    log_i("print");
-    //LoRa.setTxPower(14,RF_PACONFIG_PASELECT_PABOOST);
-    //radio.transmit(frame,length,addr);
-    LoRa.endPacket();   
-    log_i("endPacket");
-  #endif 
-
-#else  //WIFI_LoRa_32_V2
-  // send packet
-  LoRa.beginPacket();
-  /*
-  * LoRa.setTxPower(txPower,RFOUT_pin);
-  * txPower -- 0 ~ 20
-  * RFOUT_pin could be RF_PACONFIG_PASELECT_PABOOST or RF_PACONFIG_PASELECT_RFO
-  *   - RF_PACONFIG_PASELECT_PABOOST -- LoRa single output via PABOOST, maximum output 20dBm
-  *   - RF_PACONFIG_PASELECT_RFO     -- LoRa single output via RFO_HF / RFO_LF, maximum output 14dBm
-  */
-  LoRa.setTxPower(14,RF_PACONFIG_PASELECT_PABOOST);
-  LoRa.print(data);
-  LoRa.endPacket();
-#endif
-
-}
-
 #if 0
-void LoRaClass::Buildframe(const char* data,uint16_t data)
+uint8_t calc_crc (String data,size_t len,char *pframe) {
+   uint8_t i;
+   char buf[30];
+
+   for (i=0;i<len;i++){
+     buf[0] = (char) data.c_str();
+   }
+   log_i("len=%d %2x %2x %2x %2x",len, buf[0],buf[1],buf[2],buf[3]);
+   return len;
+}
+#endif
+
+void LoRaClass::SendFrame(String data,size_t len)
 {
   String var1;
+  uint8_t len1=0;
   char buf[10];
 
 #if  defined ( WIFI_LoRa_32_V3 )
@@ -824,8 +717,9 @@ void LoRaClass::Buildframe(const char* data,uint16_t data)
   Serial.println(ret);
 
 #else  //WIFI_LoRa_32_V2
+
   // send packet
-  LoRa.beginPacket();
+  //LoRa.beginPacket();
   /*
   * LoRa.setTxPower(txPower,RFOUT_pin);
   * txPower -- 0 ~ 20
@@ -833,15 +727,28 @@ void LoRaClass::Buildframe(const char* data,uint16_t data)
   *   - RF_PACONFIG_PASELECT_PABOOST -- LoRa single output via PABOOST, maximum output 20dBm
   *   - RF_PACONFIG_PASELECT_RFO     -- LoRa single output via RFO_HF / RFO_LF, maximum output 14dBm
   */
-  LoRa.setTxPower(14,RF_PACONFIG_PASELECT_PABOOST);
-  LoRa.print(data);
-  LoRa.endPacket();
+  //LoRa.setTxPower(14,RF_PACONFIG_PASELECT_PABOOST);
+  //LoRa.print(data);
+  //LoRa.endPacket();
+
+  // send another one
+  //disableCrc();
+  //enableCrc();
+  //len1 = calc_crc(data,len,frame);
+  transmissionState = radio.startTransmit(data);
+
+  // the previous operation was transmission, listen for response
+  // print the result
+  if (transmissionState == RADIOLIB_ERR_NONE) {
+    log_i("transmission finished!");
+  } else {
+    log_e("failed, code=%d ",transmissionState);
+  }
+
+
 #endif
 
 }
-#endif
-
-
 uint32_t getRssi(void) {
   uint32_t retRssi=0;
 
@@ -857,9 +764,7 @@ uint32_t getRssi(void) {
 uint8_t LoRaClass::ReceiveFrame(char *pframe) {
 
  #if  defined ( WIFI_LoRa_32_V3 ) 
- #if 0 
   String str;
-
   int state = radio.receive(str);
 
   if (state == RADIOLIB_ERR_NONE) {
@@ -876,24 +781,14 @@ uint8_t LoRaClass::ReceiveFrame(char *pframe) {
     Serial.print(F("Failed to receive packet, code "));
     Serial.println(state);    
   }
+
 #else
+
+#if 0
   packetSize = LoRa.parsePacket();
    Serial.print("Rx Packetsize=");
     Serial.println(packetSize);
   if (packetSize) {
-    // read packet
-    while (LoRa.available()) {
-	   sprintf(Readback+strlen(Readback),"%c",(char)LoRa.read());
-    }
-    memcpy(pframe,Readback,sizeof(packetSize));
-  }
-#endif
-
-#else
-  packetSize = LoRa.parsePacket();
-  if (packetSize) {
-    Serial.print("Rx Packetsize=");
-    Serial.println(packetSize);
     // read packet
     while (LoRa.available()) {
 	   sprintf(Readback+strlen(Readback),"%c",(char)LoRa.read());
@@ -911,7 +806,20 @@ uint8_t LoRaClass::ReceiveFrame(char *pframe) {
     // Serial.print(" with RSSI ");
     // Serial.println(LoRa.packetRssi());
   }
+#else
+  String str;
+
+  //disableCrc();
+  enableCrc();
+  int state = radio.readData(str);
+  if (state == RADIOLIB_ERR_NONE) {
+    // packet was successfully received
+    log_i("Received packet len=%d",str.length());
+    Serial.println(str);
+  }
 #endif
+#endif
+
 
   return packetSize;
 }

@@ -11,15 +11,16 @@
  
 #define LOG_LOCAL_LEVEL CONFIG_LOG_MAXIMUM_LEVEL
  
-#define PABOOST 0
+#define PABOOST 1
+#define RX_TIMEOUT_VALUE                            1000
+#define BUFFER_SIZE                                 30 // Define the payload size here
 
+char txpacket[BUFFER_SIZE];
+char rxpacket[BUFFER_SIZE];
+char frame1[21]= "12345678901234567890";
+int count1=0;
 
-//Alterei alguma coisa no codigo 
-//Alterei de novo
-
-
-
-int count = 0;
+uint16_t count = 0;
 int sensorValue;
 
 void setup()
@@ -40,49 +41,27 @@ Heltec.begin(displayEnable, true, true,PABOOST, LORA_FREQUENCY_V2);
 #endif
 }
 
-char txframe[10];
-size_t Buildframe(char *txframe) {
-   
-   size_t pos=0;
-   char *pucAux=(char *) &count; 
-
-   //txframe[pos++] = MY_ADDRESS;
-   //txframe[pos++] = BROADCAST;
-   //txframe[pos++] = CMD_DATA;
-   txframe[pos++] = *pucAux++;
-   txframe[pos++] = *pucAux++;
-   return pos;
-}
-
-void loop(){
+void loop() {
   char buf[30];
-  size_t len=0;
+  uint8_t ret=0;   
 
-  #if ROUTER
-    // Send the message
-    len = Buildframe(txframe);
-
-    sprintf(buf,"Tx= %d",count);
-    log_i("%s",buf);
-    LoRa.SendFrame(txframe,len);
-    //LoRa.SendFrame(String(count),1);
-    count++;
-  #else
-    uint8_t ret=0;
-    char  newframe[50];
-
-    ret = LoRa.ReceiveFrame(newframe);
+#if ROUTER
+    sprintf(txpacket,"%s %d",frame1,count1);
+    count1++;
+  
+    LoRa.SendFrame(txpacket,1);
+    log_i("%s",txpacket);
+#else
+   ret = LoRa.ReceiveFrame(rxpacket);
     if (ret>0){
-      sprintf(buf,"Rx=%s",newframe);
+      sprintf(buf,"Rx=%s",rxpacket);
       log_i("ED buf=%s",buf);
     }
-  #endif 
-
-  #if DISPLAY_ENABLE 
-    Heltec.DisplayShow(buf);
-  #endif
-  delay(500); 
+#endif
+  
+#if DISPLAY_ENABLE 
+  Heltec.DisplayShow(buf);
+#endif
+  delay(500);
 }
-
-
 

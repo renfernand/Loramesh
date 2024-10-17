@@ -14,9 +14,6 @@
 //#define LED_BUILTIN 13
 #endif
 
-#define MY_ADDRESS 0
-#define BROADCAST 255
-
 /*  LoRa spreading factor. Defaults to 9.
    goes from 7 to 12 where SF7 is the shortest and SF12 the longest */
 #define LORA_SF 9
@@ -42,7 +39,7 @@
   range from 10 to 20 dBm*/
 #define LORA_POWER 10
 
-/* coding rate */
+/* cr */
 #define LORA_CR 7
 
 

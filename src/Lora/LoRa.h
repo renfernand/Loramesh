@@ -4,14 +4,6 @@
 #include <Arduino.h>
 #include <SPI.h>
 
-
-enum  {
-   CMD_BEACON=0,
-   CMD_JOIN,
-   CMD_DATA
-} CommandType;
-
-
 #if defined( WIFI_LoRa_32_V3 )
 #define LORA_DEFAULT_SS_PIN     8
 #define LORA_DEFAULT_RESET_PIN  12
@@ -66,8 +58,7 @@ public:
   int beginV3(long frequency);
   void end();
 
-  void SendFrame2(String data,size_t len);
-  void SendFrame(const char* data,size_t len);
+  void SendFrame(String data,size_t len);
   uint8_t ReceiveFrame(char *pframe); 
 
   int beginPacket(int implicitHeader = false);
@@ -92,7 +83,6 @@ public:
   void receive(int size = 0);
   void idle();
   void sleep();
-  uint8_t calc_crc(const char* data,size_t len, uint8_t *pframe);
 
   void setTxPower(int8_t power, int8_t outputPin);
   void setTxPowerMax(int level);

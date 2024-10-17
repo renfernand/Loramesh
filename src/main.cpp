@@ -2,9 +2,9 @@
 #include "heltec.h"
 #include "Lora\loracom.h"
 #include <Wire.h>
-#include "OLED\SSD1306.h"
 #include <RadioLib.h>
 #if DISPLAY_ENABLE
+#include "OLED\SSD1306.h"
 #include "display.h"
 #endif
 #include "esp_log.h"
@@ -51,6 +51,7 @@ void loop() {
   
     LoRa.SendFrame(txpacket,1);
     log_i("%s",txpacket);
+    delay(2000);
 #else
    ret = LoRa.ReceiveFrame(rxpacket);
     if (ret>0){
@@ -62,6 +63,5 @@ void loop() {
 #if DISPLAY_ENABLE 
   Heltec.DisplayShow(buf);
 #endif
-  delay(500);
 }
 

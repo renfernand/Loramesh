@@ -1,6 +1,12 @@
 #include "devconfig.h"
 #include "LoRa.h"
 #include <RadioLib.h>
+#include "radio.h"
+
+
+#if defined ( WIFI_LoRa_32_V2 )
+#include "sx1276.h"
+#endif
 
 #if defined ( WIFI_LoRa_32_V3 )
 SX1262 radio = new Module(SS,DIO0,RST_LoRa,BUSY_LoRa);
@@ -14,6 +20,7 @@ bool newvalue=0;
 int packetSize = 0;
 char frame[50];
 
+#if 0
 // save transmission states between loops
 int transmissionState = RADIOLIB_ERR_NONE;
 
@@ -89,6 +96,7 @@ bool transmitFlag = false;
 
 
 #define MAX_PKT_LENGTH           255
+#endif
 
 LoRaClass::LoRaClass() :
   _spiSettings(8E6, MSBFIRST, SPI_MODE0),
@@ -244,18 +252,29 @@ int LoRaClass::beginPacket(int implicitHeader)
 int LoRaClass::endPacket(bool async)
 {
   // put in TX mode
-  writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_TX);
-
+  writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_TX);
   if (async) {
     // grace time is required for the radio
     delayMicroseconds(150);
   } else {
     // wait for TX done
+    //V3 -  
+#if defined( WIFI_LoRa_32_V3 )    
+    while ((readRegister(REG_IRQ_FLAGS) & RADIOLIB_SX126X_IRQ_TX_DONE) == 0) {
+      log_i("write3");
+      yield();
+    }
+    // clear IRQ's
+    log_i("write4");
+    writeRegister(REG_IRQ_FLAGS, RADIOLIB_SX126X_IRQ_TX_DONE);
+#else
     while ((readRegister(REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK) == 0) {
       yield();
     }
     // clear IRQ's
     writeRegister(REG_IRQ_FLAGS, IRQ_TX_DONE_MASK);
+#endif
+
   }
 
   return 1;
@@ -275,8 +294,10 @@ int LoRaClass::parsePacket(int size)
 
   // clear IRQ's
   writeRegister(REG_IRQ_FLAGS, irqFlags);
+//RADIOLIB_SX126X_IRQ_RX_DONE
+#if defined(WIFI_LoRa_32_V3)
+  if ((irqFlags & RADIOLIB_SX126X_IRQ_RX_DONE) && (irqFlags & RADIOLIB_SX126X_IRQ_CRC_ERR) == 0) {
 
-  if ((irqFlags & IRQ_RX_DONE_MASK) && (irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
     // received a packet
     _packetIndex = 0;
     // read packet length
@@ -290,13 +311,39 @@ int LoRaClass::parsePacket(int size)
     // put in standby mode
     idle();
   }
-  else if (readRegister(REG_OP_MODE) != (MODE_LONG_RANGE_MODE | MODE_RX_SINGLE)) {
+  else if (readRegister(REG_OPMODE) != (MODE_LONG_RANGE_MODE | MODE_RX_SINGLE)) {
     // not currently in RX mode
     // reset FIFO address
     writeRegister(REG_FIFO_ADDR_PTR, 0);
     // put in single RX mode
-    writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_RX_SINGLE);
+    writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_RX_SINGLE);
   }
+#else
+  if ((irqFlags & IRQ_RX_DONE_MASK) && (irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
+
+    // received a packet
+    _packetIndex = 0;
+    // read packet length
+    if (_implicitHeaderMode) {
+      packetLength = readRegister(REG_PAYLOAD_LENGTH);
+    } else {
+      packetLength = readRegister(REG_RX_NB_BYTES);
+    }
+    // set FIFO address to current RX address
+    writeRegister(REG_FIFO_ADDR_PTR, readRegister(REG_FIFO_RX_CURRENT_ADDR));
+    // put in standby mode
+    idle();
+  }
+  else if (readRegister(REG_OPMODE) != (MODE_LONG_RANGE_MODE | MODE_RX_SINGLE)) {
+    // not currently in RX mode
+    // reset FIFO address
+    writeRegister(REG_FIFO_ADDR_PTR, 0);
+    // put in single RX mode
+    writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_RX_SINGLE);
+  }
+
+#endif
+
   return packetLength;
 }
 
@@ -392,7 +439,7 @@ void LoRaClass::onReceive(void(*callback)(int))
   _onReceive = callback;
 
   if (callback) {
-    writeRegister(REG_DIO_MAPPING_1, 0x00);
+    writeRegister(REG_DIOMAPPING1, 0x00);
     attachInterrupt(digitalPinToInterrupt(_dio0), LoRaClass::onDio0Rise, RISING);
 //    attachInterrupt(digitalPinToInterrupt(_dio0), LoRaClass::onDio0Rise, RISING);
   } else {
@@ -409,17 +456,17 @@ void LoRaClass::receive(int size)
     explicitHeaderMode();
   }
 
-  writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_RX_CONTINUOUS);
+  writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_RX_CONTINUOUS);
 }
 
 void LoRaClass::idle()
 {
-  writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_STDBY);
+  writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_STDBY);
 }
 
 void LoRaClass::sleep()
 {
-  writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_SLEEP);
+  writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_SLEEP);
 }
 
 void LoRaClass::setTxPower(int8_t power, int8_t outputPin)
@@ -427,8 +474,8 @@ void LoRaClass::setTxPower(int8_t power, int8_t outputPin)
 	  uint8_t paConfig = 0;
 	  uint8_t paDac = 0;
 
-	  paConfig = readRegister( REG_PA_CONFIG );
-	  paDac = readRegister( REG_PaDac );
+	  paConfig = readRegister( REG_PACONFIG );
+	  paDac = readRegister( REG_PADAC );
 
 	  paConfig = ( paConfig & RF_PACONFIG_PASELECT_MASK ) | outputPin;
 	  paConfig = ( paConfig & RF_PACONFIG_MAX_POWER_MASK ) | 0x70;
@@ -481,8 +528,8 @@ void LoRaClass::setTxPower(int8_t power, int8_t outputPin)
 
 	    paConfig = ( paConfig & RF_PACONFIG_OUTPUTPOWER_MASK ) | ( uint8_t )( ( uint16_t )( power + 1 ) & 0x0F );
 	  }
-	  writeRegister( REG_PA_CONFIG, paConfig );
-	  writeRegister( REG_PaDac, paDac );
+	  writeRegister( REG_PACONFIG, paConfig );
+	  writeRegister( REG_PADAC, paDac );
 }
 
 void LoRaClass::setTxPowerMax(int level)
@@ -493,9 +540,9 @@ void LoRaClass::setTxPowerMax(int level)
 	else if(level > 20)	{
 		level = 20;
 	}
-	writeRegister(REG_LR_OCP,0x3f);
-	writeRegister(REG_PaDac,0x87);//Open PA_BOOST
-	writeRegister(REG_PA_CONFIG, RF_PACONFIG_PASELECT_PABOOST | (level - 5));
+	writeRegister(REG_OCP,0x3f);
+	writeRegister(REG_PADAC,0x87);//Open PA_BOOST
+	writeRegister(REG_PACONFIG, RF_PACONFIG_PASELECT_PABOOST | (level - 5));
 }
 
 void LoRaClass::setFrequency(long frequency)
@@ -503,9 +550,9 @@ void LoRaClass::setFrequency(long frequency)
   _frequency = frequency;
 
   uint64_t frf = ((uint64_t)frequency << 19) / 32000000;
-  writeRegister(REG_FRF_MSB, (uint8_t)(frf >> 16));
-  writeRegister(REG_FRF_MID, (uint8_t)(frf >> 8));
-  writeRegister(REG_FRF_LSB, (uint8_t)(frf >> 0));
+  writeRegister(REG_FRFMSB, (uint8_t)(frf >> 16));
+  writeRegister(REG_FRFMID, (uint8_t)(frf >> 8));
+  writeRegister(REG_FRFLSB, (uint8_t)(frf >> 0));
 }
 
 void LoRaClass::setSpreadingFactor(int sf)
@@ -647,7 +694,11 @@ void LoRaClass::handleDio0Rise()
   int irqFlags = readRegister(REG_IRQ_FLAGS);
   // clear IRQ's
   writeRegister(REG_IRQ_FLAGS, irqFlags);
+#if defined(WIFI_LoRa_32_V3) 
+  if ((irqFlags & RADIOLIB_SX126X_IRQ_CRC_ERR) == 0) {
+#else
   if ((irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
+#endif    
     // received a packet
     _packetIndex = 0;
     // read packet length
@@ -735,15 +786,15 @@ void LoRaClass::SendFrame(String data,size_t len)
   //disableCrc();
   //enableCrc();
   //len1 = calc_crc(data,len,frame);
-  transmissionState = radio.startTransmit(data);
+  //transmissionState = radio.startTransmit(data);
 
   // the previous operation was transmission, listen for response
   // print the result
-  if (transmissionState == RADIOLIB_ERR_NONE) {
-    log_i("transmission finished!");
-  } else {
-    log_e("failed, code=%d ",transmissionState);
-  }
+ // if (transmissionState == RADIOLIB_ERR_NONE) {
+ //   log_i("transmission finished!");
+ // } else {
+ //   log_e("failed, code=%d ",transmissionState);
+ // }
 
 
 #endif
@@ -753,7 +804,7 @@ uint32_t getRssi(void) {
   uint32_t retRssi=0;
 
  #if  defined ( WIFI_LoRa_32_V3 ) 
-     retRssi = (uint32_t) radio.getRSSI();
+     retRssi = (uint32_t) radio.getRSSI(1);
  #else
      retRssi = (uint32_t) LoRa.packetRssi();
  #endif
@@ -770,17 +821,14 @@ uint8_t LoRaClass::ReceiveFrame(char *pframe) {
   if (state == RADIOLIB_ERR_NONE) {
     // Packet received successfully
     packetSize = str.length();
-    Serial.print("Received packet [");
-    Serial.print(packetSize);
-    Serial.print(" ] = ");
-    Serial.println(str);
     strcpy(pframe,str.c_str());
+
+    log_i("Received packet [%d] rssi=%d",packetSize,getRssi());
   }
-  else {
-      // Some other error occurred (excluding timeout and CRC mismatch)
-    Serial.print(F("Failed to receive packet, code "));
-    Serial.println(state);    
-  }
+  //else {
+  //  // Some other error occurred (excluding timeout and CRC mismatch)
+  //  log_e("Failed to receive packet!!!! code=%d",state);
+  //}
 
 #else
 

@@ -1,6 +1,5 @@
 #include "devconfig.h"
 #include "heltec.h"
-#include "Lora\loracom.h"
 #include <Wire.h>
 #include <RadioLib.h>
 #if DISPLAY_ENABLE
@@ -13,11 +12,23 @@
  
 #define PABOOST 1
 #define RX_TIMEOUT_VALUE                            1000
-#define BUFFER_SIZE                                 30 // Define the payload size here
 
+#define TEST_FRAME_40
+
+#define BUFFER_SIZE                                 50 // Define the payload size here
 char txpacket[BUFFER_SIZE];
 char rxpacket[BUFFER_SIZE];
+
+#if defined TEST_FRAME_10
+char frame1[11]= "123456789";
+#elif defined TEST_FRAME_20
 char frame1[21]= "12345678901234567890";
+#elif defined TEST_FRAME_30
+char frame1[31]= "123456789012345678901234567890";
+#elif defined TEST_FRAME_40
+char frame1[41]= "1234567890123456789012345678901234567890";
+#endif
+
 int count1=0;
 
 uint16_t count = 0;
@@ -42,11 +53,11 @@ Heltec.begin(displayEnable, true, true,PABOOST, LORA_FREQUENCY_V2);
 }
 
 void loop() {
-  char buf[30];
+  char buf[BUFFER_SIZE];
   uint8_t ret=0;   
 
 #if ROUTER
-    sprintf(txpacket,"%s %d",frame1,count1);
+    sprintf(txpacket,"%s%d",frame1,count1);
     count1++;
   
     LoRa.SendFrame(txpacket,1);

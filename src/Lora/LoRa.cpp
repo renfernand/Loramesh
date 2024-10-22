@@ -2,7 +2,11 @@
 #include "LoRa.h"
 #include <RadioLib.h>
 #include "radio.h"
+#include "driver/board.h"
 
+#if defined ( WIFI_LoRa_32_V3 )
+//#include "sx126x\sx1262.h"
+#endif
 
 #if defined ( WIFI_LoRa_32_V2 )
 #include "sx1276.h"
@@ -13,90 +17,17 @@ SX1262 radio = new Module(SS,DIO0,RST_LoRa,BUSY_LoRa);
 #else //defined ( WIFI_LoRa_32_V2 )
 SX1276 radio = new Module(SS, DIO0, RST_LoRa, DIO1);
 #endif
-
+volatile bool rxFlag = false;
 char buf [10];
 char Readback[50];
 bool newvalue=0;
 int packetSize = 0;
 char frame[50];
 
-#if 0
-// save transmission states between loops
-int transmissionState = RADIOLIB_ERR_NONE;
-
-// flag to indicate transmission or reception state
-bool transmitFlag = false;
-
-// registers
-#define REG_FIFO                 0x00
-#define REG_OP_MODE              0x01
-#define REG_FRF_MSB              0x06
-#define REG_FRF_MID              0x07
-#define REG_FRF_LSB              0x08
-#define REG_PA_CONFIG            0x09
-#define REG_LR_OCP				       0X0b
-#define REG_LNA                  0x0c
-#define REG_FIFO_ADDR_PTR        0x0d
-#define REG_FIFO_TX_BASE_ADDR    0x0e
-#define REG_FIFO_RX_BASE_ADDR    0x0f
-#define REG_FIFO_RX_CURRENT_ADDR 0x10
-#define REG_IRQ_FLAGS            0x12
-#define REG_RX_NB_BYTES          0x13
-#define REG_PKT_RSSI_VALUE       0x1a
-#define REG_PKT_SNR_VALUE        0x1b
-#define REG_MODEM_CONFIG_1       0x1d
-#define REG_MODEM_CONFIG_2       0x1e
-#define REG_PREAMBLE_MSB         0x20
-#define REG_PREAMBLE_LSB         0x21
-#define REG_PAYLOAD_LENGTH       0x22
-#define REG_MODEM_CONFIG_3       0x26
-#define REG_RSSI_WIDEBAND        0x2c
-#define REG_DETECTION_OPTIMIZE   0x31
-#define REG_DETECTION_THRESHOLD  0x37
-#define REG_SYNC_WORD            0x39
-#define REG_DIO_MAPPING_1        0x40
-#define REG_VERSION              0x42
-#define REG_PaDac				 0x4d//add REG_PaDac
-
-// modes
-#define MODE_LONG_RANGE_MODE     0x80
-#define MODE_SLEEP               0x00
-#define MODE_STDBY               0x01
-#define MODE_TX                  0x03
-#define MODE_RX_CONTINUOUS       0x05
-#define MODE_RX_SINGLE           0x06
-
-// PA config
-//#define PA_BOOST                 0x80
-//#define RFO                      0x70
-// IRQ masks
-#define IRQ_TX_DONE_MASK           0x08
-#define IRQ_PAYLOAD_CRC_ERROR_MASK 0x20
-#define IRQ_RX_DONE_MASK           0x40
-
-/*!
- * RegInvertIQ
- */
-#define RFLR_INVERTIQ_RX_MASK                       0xBF
-#define RFLR_INVERTIQ_RX_OFF                        0x00
-#define RFLR_INVERTIQ_RX_ON                         0x40
-#define RFLR_INVERTIQ_TX_MASK                       0xFE
-#define RFLR_INVERTIQ_TX_OFF                        0x01
-#define RFLR_INVERTIQ_TX_ON                         0x00
-
-#define REG_LR_INVERTIQ                             0x33
-
-/*!
- * RegInvertIQ2
- */
-#define RFLR_INVERTIQ2_ON                           0x19
-#define RFLR_INVERTIQ2_OFF                          0x1D
-
-#define REG_LR_INVERTIQ2                            0x3B
-
-
-#define MAX_PKT_LENGTH           255
-#endif
+#define timetosleep 1000
+#define timetowake 20000
+static TimerEvent_t sleep1;
+static TimerEvent_t wakeup1;
 
 LoRaClass::LoRaClass() :
   _spiSettings(8E6, MSBFIRST, SPI_MODE0),
@@ -110,59 +41,6 @@ LoRaClass::LoRaClass() :
   setTimeout(0);
 }
 
-#if 0
-int LoRaClass::beginV2(long frequency,bool PABOOST){
-
- // setup pins
-  pinMode(_ss, OUTPUT);
-  pinMode(_reset, OUTPUT);
-  pinMode(_dio0, INPUT);
-  // perform reset
-  digitalWrite(_reset, LOW);
-  delay(20);
-  digitalWrite(_reset, HIGH);
-  delay(50);
-  // set SS high
-  digitalWrite(_ss, HIGH);
-  // start SPI
-  SPI.begin();
-  // check version
-  uint8_t version = readRegister(REG_VERSION);
-  if (version != 0x12) { 
-  	return 0; 
-	}
-  // put in sleep mode
-  sleep();
-
-  // set frequency
-  setFrequency(frequency);
-  // set base addresses
-  writeRegister(REG_FIFO_TX_BASE_ADDR, 0);
-  writeRegister(REG_FIFO_RX_BASE_ADDR, 0);
-  // set LNA boost
-  writeRegister(REG_LNA, readRegister(REG_LNA) | 0x03);
-  // set auto AGC
-  writeRegister(REG_MODEM_CONFIG_3, 0x04);
-  // set output power to 14 dBm
-  if(PABOOST == true)
-	  setTxPower(LORA_POWER, RF_PACONFIG_PASELECT_PABOOST);
-  else
-	  setTxPower(LORA_POWER, RF_PACONFIG_PASELECT_RFO);
-
-  //set the spreding factor (7 a 12) 
-  setSpreadingFactor(LORA_SF);
-  // set the band width (125E3,250E3,500E3)
-  setSignalBandwidth(LORA_BW_V2);
-  setCodingRate4(11);
-  setSyncWord(0x34);
-  disableCrc();
-  crc();
-  idle();
-
-  return 1;
-}
-#endif
-
 // flag to indicate that a packet was sent or received
 volatile bool operationDone = false;
 
@@ -170,6 +48,23 @@ void setFlag(void) {
   // we sent or received  packet, set the flag
   operationDone = true;
 }
+
+
+// Can't do Serial or display things here, takes too much time for the interrupt
+void rx() {
+  rxFlag = true;
+}
+
+
+void LoRaClass::SetTimer(uint32_t timervalue)
+{
+  Serial.printf("Timer OnSleep %d ms\r\n",timetowake);
+
+  //timetosleep ms later wake up;
+  TimerSetValue( &wakeup1, timervalue );
+  TimerStart( &wakeup1 );
+}
+
 
 int LoRaClass::begin(long frequency,bool PABOOST)
 {
@@ -194,7 +89,14 @@ int LoRaClass::begin(long frequency,bool PABOOST)
       //radio.setDataRate(LORA_DATARATE);
       radio.setBandwidth(LORA_BW_V3);
       radio.setSpreadingFactor(LORA_SF);
-      radio.setOutputPower(LORA_POWER);
+      radio.setOutputPower(TRANSMIT_POWER);
+
+      //teste rff
+      // Set the callback function for received packets
+      radio.setDio1Action(rx);
+      radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);      
+      //end teste rff
+
 
   #else //( WIFI_LoRa_32_V2 ) 
   int state = radio.begin();
@@ -816,19 +718,30 @@ uint8_t LoRaClass::ReceiveFrame(char *pframe) {
 
  #if  defined ( WIFI_LoRa_32_V3 ) 
   String str;
-  int state = radio.receive(str);
 
-  if (state == RADIOLIB_ERR_NONE) {
-    // Packet received successfully
-    packetSize = str.length();
-    strcpy(pframe,str.c_str());
+  //radio.clearDio1Action();
+  packetSize = 0;
 
-    log_i("Received packet [%d] rssi=%d",packetSize,getRssi());
+  if (rxFlag) {
+    rxFlag = false;
+    int state = radio.receive(str);
+
+    if (state == RADIOLIB_ERR_NONE) {
+      // Packet received successfully
+      packetSize = str.length();
+      strcpy(pframe,str.c_str());
+
+      log_i("Received packet [%d] rssi=%d",packetSize,getRssi());
+    }
+    //else {
+      // Some other error occurred (excluding timeout and CRC mismatch)
+    //  log_e("Failed to receive packet!!!! code=%d",state);
+    //}
+
+    //radio.setDio1Action(rx);
+    radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);    
   }
-  //else {
-  //  // Some other error occurred (excluding timeout and CRC mismatch)
-  //  log_e("Failed to receive packet!!!! code=%d",state);
-  //}
+
 
 #else
 

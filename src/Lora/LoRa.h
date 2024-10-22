@@ -57,6 +57,7 @@ public:
   int beginV2(long frequency,bool PABOOST);
   int beginV3(long frequency);
   void end();
+  void SetTimer(uint32_t timervalue);
 
   void SendFrame(String data,size_t len);
   uint8_t ReceiveFrame(char *pframe); 

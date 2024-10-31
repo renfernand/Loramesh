@@ -1,5 +1,6 @@
 #include "devconfig.h"
 #include "heltec.h"
+#include "Lora\loracom.h"
 #include <Wire.h>
 #include <RadioLib.h>
 #if DISPLAY_ENABLE
@@ -14,6 +15,7 @@
 #define RX_TIMEOUT_VALUE                            1000
 
 #define TEST_FRAME_40
+#define MINIMUM_DELAY 900 
 
 #define BUFFER_SIZE                                 50 // Define the payload size here
 char txpacket[BUFFER_SIZE];
@@ -31,8 +33,58 @@ char frame1[41]= "1234567890123456789012345678901234567890";
 
 int count1=0;
 
+//attachInterrupt(GPIO_Pin, zcisr, RISING);
+uint32_t interval;
 uint16_t count = 0;
+
 int sensorValue;
+
+// Função para limpar o buffer
+void clearBuffer(char *buffer, int size)
+{
+    for (int i = 0; i < size; i++)
+    {
+        buffer[i] = '\0';
+    }
+}
+
+
+bool receivePacket()
+{
+    int packetSize = LoRa.parsePacket();
+
+    if (packetSize)
+    {
+        int len = 0;
+        clearBuffer(rxpacket, BUFFER_SIZE);
+
+        while (LoRa.available() && len < BUFFER_SIZE - 1)
+        {
+            rxpacket[len++] = (char)LoRa.read(); // Lê o pacote byte a byte
+        }
+
+        rxpacket[len] = '\0'; // Termina string
+
+        // Confirmação de recepção
+        Serial.print("Pacote recebido: ");
+        Serial.println(rxpacket);
+
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void sendPacket()
+{
+    sprintf(txpacket, "%s %d", frame1, count1);
+    count1++;
+
+    LoRa.SendFrame(txpacket, 1);
+    log_i("%s", txpacket);
+}
 
 void setup()
 {
@@ -57,18 +109,19 @@ void loop() {
   uint8_t ret=0;   
 
 #if ROUTER
-    sprintf(txpacket,"%s%d",frame1,count1);
-    count1++;
-  
-    LoRa.SendFrame(txpacket,1);
-    log_i("%s",txpacket);
+    sendPacket();
     delay(2000);
 #else
-   ret = LoRa.ReceiveFrame(rxpacket);
-    if (ret>0){
-      sprintf(buf,"Rx=%s",rxpacket);
-      log_i("ED buf=%s",buf);
+    // ret = LoRa.ReceiveFrame(rxpacket);
+
+    if (receivePacket())
+    {
+        //Heltec.display->clear();
+        // Heltec.display->drawString(0, 0, "Aguardando pacote...");
+        // Heltec.display->display();
     }
+    delay(10);
+
 #endif
   
 #if DISPLAY_ENABLE 

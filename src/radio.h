@@ -1111,7 +1111,7 @@ extern RadioEvents_t RadioEvents1;
  *
  * \remark IRQ nesting is managed
  */
-void BoardDisableIrq( void );
+//void BoardDisableIrq( void );
 
 /*!
  * \brief Gets the board PA selection configuration

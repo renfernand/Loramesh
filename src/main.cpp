@@ -1,6 +1,5 @@
 #include "devconfig.h"
 #include "heltec.h"
-#include "Lora\loracom.h"
 #include <Wire.h>
 #include <RadioLib.h>
 #if DISPLAY_ENABLE

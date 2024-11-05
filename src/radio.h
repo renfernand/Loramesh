@@ -55,24 +55,26 @@ extern uint32_t TimeSwitch;
  */
 
 // registers
-#define REG_FIFO_ADDR_PTR        0x0d
-#define REG_FIFO_TX_BASE_ADDR    0x0e
-#define REG_FIFO_RX_BASE_ADDR    0x0f
-#define REG_FIFO_RX_CURRENT_ADDR 0x10
-#define REG_PAYLOAD_LENGTH       0x22
-#define REG_DETECTION_OPTIMIZE   0x31
-#define REG_DETECTION_THRESHOLD  0x37
-#define REG_MODEM_CONFIG_1       0x1d
-#define REG_MODEM_CONFIG_2       0x1e
-#define REG_PREAMBLE_MSB         0x20
-#define REG_PREAMBLE_LSB         0x21
-#define REG_MODEM_CONFIG_3       0x26
-#define REG_SYNC_WORD            0x39
-#define REG_IRQ_FLAGS            0x12
-#define REG_RX_NB_BYTES          0x13
-#define REG_PKT_RSSI_VALUE       0x1a
-#define REG_PKT_SNR_VALUE        0x1b
-#define REG_RSSI_WIDEBAND        0x2c
+#define REG_FIFO_ADDR_PTR                           0x0d
+#define REG_FIFO_TX_BASE_ADDR                       0x0e
+#define REG_FIFO_RX_BASE_ADDR                       0x0f
+#define REG_FIFO_RX_CURRENT_ADDR                    0x10
+#define REG_PAYLOAD_LENGTH                          0x22
+#define REG_DETECTION_OPTIMIZE                      0x31
+#define REG_DETECTION_THRESHOLD                     0x37
+#define REG_MODEM_CONFIG_1                          0x1d
+#define REG_MODEM_CONFIG_2                          0x1e
+#define REG_PREAMBLE_MSB                            0x20
+#define REG_PREAMBLE_LSB                            0x21
+#define REG_MODEM_CONFIG_3                          0x26
+#define REG_SYNC_WORD                               0x39
+
+#define REG_IRQ_FLAGS                               0x12
+
+#define REG_RX_NB_BYTES                             0x13
+#define REG_PKT_RSSI_VALUE                          0x1a
+#define REG_PKT_SNR_VALUE                           0x1b
+#define REG_RSSI_WIDEBAND                           0x2c
 
 #define REG_FIFO                                    0x00
 // Common settings
@@ -275,7 +277,9 @@ extern uint32_t TimeSwitch;
 #define REG_LR_FIFOTXBASEADDR                       0x0E
 #define REG_LR_FIFORXBASEADDR                       0x0F
 #define REG_LR_FIFORXCURRENTADDR                    0x10
+
 #define REG_LR_IRQFLAGSMASK                         0x11
+
 #define REG_LR_IRQFLAGS                             0x12
 #define REG_LR_RXNBBYTES                            0x13
 #define REG_LR_RXHEADERCNTVALUEMSB                  0x14

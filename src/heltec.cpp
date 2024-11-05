@@ -39,12 +39,6 @@ void Heltec_ESP32::begin(bool DisplayEnable, bool LoRaEnable, bool SerialEnable,
 		Serial.print("Serial initial done\r\n");
 	}
 
-    #if ROUTER
-	log_i("DEVICE IS A ROUTER!!!! \r\n");
-    #else
-	log_i("DEVICE IS A END DEVICE!!!! \r\n");
-    #endif
-
 	// OLED
 	if (DisplayEnable)
 	{

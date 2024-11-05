@@ -1,5 +1,5 @@
 Biblioteca Loramesh
-Author: Renato F. Fernandes e Natan Ferreira Alvarenga
+Author: Renato F. Fernandes, Natan Ferreira Alvarenga, Hermes G. Fernandes Neri
 Descricao:  
    - Codigo lora utilizando placas Heltec WIFI ESP32 lora V2 e V3. 
     (para compilar para uma placa V2 ou V3 basta alterar o arquivo platform.ini)
@@ -8,5 +8,5 @@ Descricao:
    
    -Inicio do codigo para rodar projeto loramesh (ainda em desenvolvimento)
    este codigo somente envia e recebe frames de diferentes tamanhos para 2 placas (ROUTER=1 envia e ROUTER=0 recebe).
-   O limite de bytes que consegui enviar na V3 foi de 33 bytes...40 bytes nao envia...
+   
    

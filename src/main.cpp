@@ -1,5 +1,5 @@
 #include "devconfig.h"
-#include "heltec.h"
+#include <heltec.h>
 #include <Wire.h>
 #include <RadioLib.h>
 #if DISPLAY_ENABLE
@@ -38,6 +38,10 @@ uint16_t count = 0;
 
 int sensorValue;
 
+TaskHandle_t Rx1Handle = NULL;
+
+//#define ARDUINO_RUNNING_CORE 1
+
 // Função para limpar o buffer
 void clearBuffer(char *buffer, int size)
 {
@@ -47,11 +51,12 @@ void clearBuffer(char *buffer, int size)
     }
 }
 
-
 bool receivePacket()
 {
-    int packetSize = LoRa.parsePacket();
-
+    int packetSize = 0;
+    bool ret=0;
+    
+    packetSize = LoRa.parsePacket(0);
     if (packetSize)
     {
         int len = 0;
@@ -65,16 +70,25 @@ bool receivePacket()
         rxpacket[len] = '\0'; // Termina string
 
         // Confirmação de recepção
-        Serial.print("Pacote recebido: ");
         Serial.println(rxpacket);
-
-        return true;
+        ret = 1;
     }
-    else
-    {
-        return false;
-    }
+    
+    return ret;
 }
+
+void receivetask(void * parameter){
+
+    for( ;; )
+    {
+        if (receivePacket()){
+            log_i("Pacote recebido: ");
+        }    
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+
+}
+
 
 void sendPacket()
 {
@@ -101,6 +115,9 @@ Heltec.begin(displayEnable, true, true,PABOOST, LORA_FREQUENCY_V3);
 #else //WIFI_LoRa_32_V2
 Heltec.begin(displayEnable, true, true,PABOOST, LORA_FREQUENCY_V2);
 #endif
+
+  //xTaskCreate(receivetask, "receive Packet", 5000,  NULL,  1,  &Rx1Handle );
+  xTaskCreatePinnedToCore( receivetask,"Task1",1024, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
 }
 
 void loop() {
@@ -113,16 +130,17 @@ void loop() {
 #else
     // ret = LoRa.ReceiveFrame(rxpacket);
 
-    if (receivePacket())
-    {
+    //if (receivePacket()){
         //Heltec.display->clear();
         // Heltec.display->drawString(0, 0, "Aguardando pacote...");
         // Heltec.display->display();
-    }
+    //}
     delay(10);
 
 #endif
-  
+    if (Rx1Handle != NULL) {
+       vTaskDelete(Rx1Handle);
+    }
 #if DISPLAY_ENABLE 
   Heltec.DisplayShow(buf);
 #endif

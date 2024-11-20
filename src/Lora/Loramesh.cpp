@@ -1,5 +1,5 @@
 #include "devconfig.h"
-#include "LoRa.h"
+#include "loramesh.h"
 #include <RadioLib.h>
 #include "radio.h"
 
@@ -8,7 +8,7 @@
 #endif
 
 #if defined ( WIFI_LoRa_32_V2 )
-#include "sx1276.h"
+#include <modules/SX127x/SX1276.h>
 #endif
 
 #if defined ( WIFI_LoRa_32_V3 )
@@ -106,7 +106,6 @@ void setFlag(void) {
 // Can't do Serial or display things here, takes too much time for the interrupt
 void rx() {
   rxFlag = true;
-  log_i("RX RX RX !!!!");
 }
 #endif
 
@@ -146,9 +145,7 @@ int LoRaClass::begin(long frequency,bool PABOOST)
 
   // set the function that will be called
   // when new packet is received
-  //radio.setDio0Action(setFlag, RISING);
-
-
+  radio.setDio0Action(setFlag, RISING);
 
 #if ROUTER
     // send the first packet on this node
@@ -158,23 +155,6 @@ int LoRaClass::begin(long frequency,bool PABOOST)
     //transmitFlag = true;
 #else
     // start listening for LoRa packets on this node
-#if ENABLE_RX_INTERRUPT
-    //radio.irqRxDoneRxTimeout(RADIOLIB_SX127X_REG_IRQ_FLAGS,RADIOLIB_SX127X_REG_IRQ_FLAGS_MASK);
-    // clear interrupt flags
-    //radio.clearIRQFlags();
-      // Set the callback function for received packets
-    radio.clearDio0Action();
-    radio.setDio0Action(rx,IRQ_RX_DONE_MASK);
-    state = radio.startReceive(0, RADIOLIB_SX127X_RXSINGLE);      
-    if (state == RADIOLIB_ERR_NONE) {
-      log_i("Begin Success!");
-
-    } else {
-      Serial.print(F("failed, code "));
-      Serial.println(state);
-      while (true) { delay(10); }
-    }
-#else    
     state = radio.startReceive();
     if (state == RADIOLIB_ERR_NONE) {
       Serial.println(F("success!"));
@@ -183,8 +163,6 @@ int LoRaClass::begin(long frequency,bool PABOOST)
       Serial.println(state);
       while (true) { delay(10); }
     }
-#endif
-
 #endif
 
   #endif
@@ -250,7 +228,7 @@ int LoRaClass::parsePacket(int size)
 {
   int packetLength = 0;
   int irqFlags = readRegister(REG_IRQ_FLAGS);
-  //int irqMasks = readRegister(REG_LR_IRQFLAGSMASK);
+
   if (size > 0) {
     implicitHeaderMode();
     writeRegister(REG_PAYLOAD_LENGTH, size & 0xff);
@@ -260,9 +238,8 @@ int LoRaClass::parsePacket(int size)
 
   // clear IRQ's
   writeRegister(REG_IRQ_FLAGS, irqFlags);
-
+//RADIOLIB_SX126X_IRQ_RX_DONE
 #if defined(WIFI_LoRa_32_V3)
-  //RADIOLIB_SX126X_IRQ_RX_DONE
   if ((irqFlags & RADIOLIB_SX126X_IRQ_RX_DONE) && (irqFlags & RADIOLIB_SX126X_IRQ_CRC_ERR) == 0) {
 
     // received a packet
@@ -287,10 +264,7 @@ int LoRaClass::parsePacket(int size)
   }
 #else
   if ((irqFlags & IRQ_RX_DONE_MASK) && (irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
-   // received a packet
-   
-    //log_i("IRQFLAGS=%x IRQMASK=)=%x", irqFlags,irqMasks);
-    
+    // received a packet
     _packetIndex = 0;
     // read packet length
     if (_implicitHeaderMode) {
@@ -704,10 +678,10 @@ uint8_t LoRaClass::singleTransfer(uint8_t address, uint8_t value)
 
 void LoRaClass::onDio0Rise()
 {
-  LoRa.handleDio0Rise();
+  loramesh.handleDio0Rise();
 }
 
-LoRaClass LoRa;
+LoRaClass loramesh;
 
 #if 0
 uint8_t calc_crc (String data,size_t len,char *pframe) {
@@ -739,17 +713,17 @@ void LoRaClass::SendFrame(String data,size_t len)
 #else  //WIFI_LoRa_32_V2
 
   // send packet
-  //LoRa.beginPacket();
+  //loramesh.beginPacket();
   /*
-  * LoRa.setTxPower(txPower,RFOUT_pin);
+  * loramesh.setTxPower(txPower,RFOUT_pin);
   * txPower -- 0 ~ 20
   * RFOUT_pin could be RF_PACONFIG_PASELECT_PABOOST or RF_PACONFIG_PASELECT_RFO
   *   - RF_PACONFIG_PASELECT_PABOOST -- LoRa single output via PABOOST, maximum output 20dBm
   *   - RF_PACONFIG_PASELECT_RFO     -- LoRa single output via RFO_HF / RFO_LF, maximum output 14dBm
   */
-  //LoRa.setTxPower(14,RF_PACONFIG_PASELECT_PABOOST);
-  //LoRa.print(data);
-  //LoRa.endPacket();
+  //loramesh.setTxPower(14,RF_PACONFIG_PASELECT_PABOOST);
+  //loramesh.print(data);
+  //loramesh.endPacket();
 
   // send another one
   //disableCrc();
@@ -775,17 +749,12 @@ uint32_t getRssi(void) {
  #if  defined ( WIFI_LoRa_32_V3 ) 
      retRssi = (uint32_t) radio.getRSSI(1);
  #else
-     retRssi = (uint32_t) LoRa.packetRssi();
+     retRssi = (uint32_t) loramesh.packetRssi();
  #endif
  
  return retRssi;
 }
 
-/* ReceiveFrame 
-   utilizada para receber frames mais simples
-   para a V2 nao conseguia enviar mais de 5 bytes...
-   Melhor usar a funcao "parsePacket" que funciono com mais bytes no frame.
-*/
 uint8_t LoRaClass::ReceiveFrame(char *pframe) {
 
  #if  defined ( WIFI_LoRa_32_V3 ) 
@@ -806,6 +775,11 @@ uint8_t LoRaClass::ReceiveFrame(char *pframe) {
 
     log_i("Received packet [%d] rssi=%d",packetSize,getRssi());
   }
+  //else {
+      // Some other error occurred (excluding timeout and CRC mismatch)
+  //  log_e("Failed to receive packet!!!! code=%d",state);
+  //}
+
     //radio.setDio1Action(rx);
     radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);    
   }
@@ -824,45 +798,31 @@ uint8_t LoRaClass::ReceiveFrame(char *pframe) {
 
 #else // WIFI_LoRa_V2
 
+#if 0
+  packetSize = loramesh.parsePacket();
+   Serial.print("Rx Packetsize=");
+    Serial.println(packetSize);
+  if (packetSize) {
+    // read packet
+    while (loramesh.available()) {
+	   sprintf(Readback+strlen(Readback),"%c",(char)loramesh.read());
+    }
+    memcpy(pframe,Readback,sizeof(packetSize));
+   
+#if DISPLAY_ENABLE 
+    //Heltec.DisplayShow(packetSize,Readback);
+    //DisplayShow1(packetSize);
+ 
+#endif	
+    memset(Readback,0,50);
+    
+    // print RSSI of packet
+    // Serial.print(" with RSSI ");
+    // Serial.println(loramesh.packetRssi());
+  }
+#else
   String str;
 
-
-#if ENABLE_RX_INTERRUPT
-  //radio.clearDio1Action();
-  packetSize = 0;
-
-  int irqFlags = readRegister(REG_IRQ_FLAGS);
-  log_i("irqFlags = %d",irqFlags);
-
-   // clear IRQ's
-  writeRegister(REG_IRQ_FLAGS, irqFlags);
-
-  // set FIFO address to current RX address
-  writeRegister(REG_FIFO_ADDR_PTR, readRegister(REG_FIFO_RX_CURRENT_ADDR));
-  // put in standby mode
-  idle();
-
-  if (rxFlag) {
-    rxFlag = false;
-  int state = radio.receive(str);
-
-  if (state == RADIOLIB_ERR_NONE) {
-    // Packet received successfully
-    packetSize = str.length();
-    strcpy(pframe,str.c_str());
-
-    log_i("Received packet [%d] rssi=%d",packetSize,getRssi());
-  }
-  //else {
-      // Some other error occurred (excluding timeout and CRC mismatch)
-  //  log_e("Failed to receive packet!!!! code=%d",state);
-  //}
-
-    //radio.setDio1Action(rx);
-    //radio.startReceive(RADIOLIB_SX127X_RX_TIMEOUT_LSB);    
-  }
- 
-#else
   //disableCrc();
   enableCrc();
   int state = radio.readData(str);
@@ -872,8 +832,8 @@ uint8_t LoRaClass::ReceiveFrame(char *pframe) {
     Serial.println(str);
   }
 #endif
-
 #endif
+
 
   return packetSize;
 }

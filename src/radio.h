@@ -68,9 +68,7 @@ extern uint32_t TimeSwitch;
 #define REG_PREAMBLE_LSB                            0x21
 #define REG_MODEM_CONFIG_3                          0x26
 #define REG_SYNC_WORD                               0x39
-
 #define REG_IRQ_FLAGS                               0x12
-
 #define REG_RX_NB_BYTES                             0x13
 #define REG_PKT_RSSI_VALUE                          0x1a
 #define REG_PKT_SNR_VALUE                           0x1b
@@ -277,9 +275,7 @@ extern uint32_t TimeSwitch;
 #define REG_LR_FIFOTXBASEADDR                       0x0E
 #define REG_LR_FIFORXBASEADDR                       0x0F
 #define REG_LR_FIFORXCURRENTADDR                    0x10
-
 #define REG_LR_IRQFLAGSMASK                         0x11
-
 #define REG_LR_IRQFLAGS                             0x12
 #define REG_LR_RXNBBYTES                            0x13
 #define REG_LR_RXHEADERCNTVALUEMSB                  0x14
@@ -1115,7 +1111,7 @@ extern RadioEvents_t RadioEvents1;
  *
  * \remark IRQ nesting is managed
  */
-//void BoardDisableIrq( void );
+void BoardDisableIrq( void );
 
 /*!
  * \brief Gets the board PA selection configuration

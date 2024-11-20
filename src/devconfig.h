@@ -5,7 +5,7 @@
 // heltec_wifi_lora_32_V3 -  radio chipset SX1262 OLED chip SSD1306)
 
 //define se o nó sensor será um ED (ROUTER=0) ou RT (ROUTER=1) 
-#define ROUTER 0
+#define ROUTER 1
 
 //define se vai usar ou nao o Display Oled da placa 
 #define DISPLAY_ENABLE 0

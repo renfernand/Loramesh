@@ -18,6 +18,7 @@
         "utility": "cpp",
         "algorithm": "cpp",
         "*.tcc": "cpp",
-        "numeric": "cpp"
+        "numeric": "cpp",
+        "cstddef": "cpp"
     }
 }

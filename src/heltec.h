@@ -12,8 +12,8 @@
 #endif
 
 #if defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( WIFI_LoRa_32_V3 ) || defined( Wireless_Stick ) || defined( Wireless_Stick_Lite ) || defined( Wireless_Bridge )
-#include <SPI.h>
-#include "lora/loramesh.h"
+//#include <SPI.h>
+//#include "lora/loramesh.h"
 #endif
 
 
@@ -24,12 +24,13 @@ class Heltec_ESP32 {
 	~Heltec_ESP32();
 
 //  void begin(bool DisplayEnable=true, bool LoRaEnable=true, bool SerialEnable=true, bool PABOOST=true, long BAND=470E6);
-    void begin(bool DisplayEnable, bool LoRaEnable, bool SerialEnable, bool PABOOST, long BAND);
+//  void begin(bool DisplayEnable, bool LoRaEnable, bool SerialEnable, bool PABOOST, long BAND);
+    void begin();
 
     void DisplayShow(char *pframe);
 
 #if defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) || defined( Wireless_Stick_Lite ) || defined( Wireless_Bridge ) 
-    LoRaClass LoRa;
+//    LoRaClass LoRa;
 #endif
 
 #if defined( WIFI_Kit_32 ) || defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) || defined( WIFI_LoRa_32_V3 )

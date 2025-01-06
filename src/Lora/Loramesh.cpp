@@ -2,20 +2,28 @@
 #include "loramesh.h"
 #include <RadioLib.h>
 #include "radio.h"
+#include "QueuePacket.h"
 
 #if defined ( WIFI_LoRa_32_V3 )
-//#include "sx126x\sx1262.h"
+#include <modules/sx126x/sx1262.h>
+
+SX1262 radio = new Module(SS,DIO0,RST_LoRa,BUSY_LoRa);
+
 #endif
 
 #if defined ( WIFI_LoRa_32_V2 )
 #include <modules/SX127x/SX1276.h>
-#endif
 
-#if defined ( WIFI_LoRa_32_V3 )
-SX1262 radio = new Module(SS,DIO0,RST_LoRa,BUSY_LoRa);
-#else //defined ( WIFI_LoRa_32_V2 )
 SX1276 radio = new Module(SS, DIO0, RST_LoRa, DIO1);
 #endif
+
+LoRaClass loramesh;
+
+// flag to indicate that a preamble was detected
+volatile bool detectedFlag = false;
+// flag to indicate that a preamble was not detected
+volatile bool timeoutFlag = false;
+
 volatile bool rxFlag = false;
 char buf [10];
 char Readback[50];
@@ -29,6 +37,9 @@ int transmissionState = RADIOLIB_ERR_NONE;
 // flag to indicate transmission or reception state
 bool transmitFlag = false;
 
+// flag to indicate that a packet was sent or received
+volatile bool operationDone = false;
+
 LoRaClass::LoRaClass() :
   _spiSettings(8E6, MSBFIRST, SPI_MODE0),
   _ss(LORA_DEFAULT_SS_PIN), _reset(LORA_DEFAULT_RESET_PIN), _dio0(LORA_DEFAULT_DIO0_PIN),
@@ -41,62 +52,6 @@ LoRaClass::LoRaClass() :
   setTimeout(0);
 }
 
-#if 0
-int LoRaClass::beginV2(long frequency,bool PABOOST){
-
- // setup pins
-  pinMode(_ss, OUTPUT);
-  pinMode(_reset, OUTPUT);
-  pinMode(_dio0, INPUT);
-  // perform reset
-  digitalWrite(_reset, LOW);
-  delay(20);
-  digitalWrite(_reset, HIGH);
-  delay(50);
-  // set SS high
-  digitalWrite(_ss, HIGH);
-  // start SPI
-  SPI.begin();
-  // check version
-  uint8_t version = readRegister(REG_VERSION);
-  if (version != 0x12) { 
-  	return 0; 
-	}
-  // put in sleep mode
-  sleep();
-
-  // set frequency
-  setFrequency(frequency);
-  // set base addresses
-  writeRegister(REG_FIFO_TX_BASE_ADDR, 0);
-  writeRegister(REG_FIFO_RX_BASE_ADDR, 0);
-  // set LNA boost
-  writeRegister(REG_LNA, readRegister(REG_LNA) | 0x03);
-  // set auto AGC
-  writeRegister(REG_MODEM_CONFIG_3, 0x04);
-  // set output power to 14 dBm
-  if(PABOOST == true)
-	  setTxPower(LORA_POWER, RF_PACONFIG_PASELECT_PABOOST);
-  else
-	  setTxPower(LORA_POWER, RF_PACONFIG_PASELECT_RFO);
-
-  //set the spreding factor (7 a 12) 
-  setSpreadingFactor(LORA_SF);
-  // set the band width (125E3,250E3,500E3)
-  setSignalBandwidth(LORA_BW_V2);
-  setCodingRate4(11);
-  setSyncWord(0x34);
-  disableCrc();
-  crc();
-  idle();
-
-  return 1;
-}
-#endif
-
-// flag to indicate that a packet was sent or received
-volatile bool operationDone = false;
-
 void setFlag(void) {
   // we sent or received  packet, set the flag
   operationDone = true;
@@ -108,9 +63,43 @@ void rx() {
   rxFlag = true;
 }
 #endif
-
-int LoRaClass::begin(long frequency,bool PABOOST)
+void LoRaClass::VextON(void)
 {
+	pinMode(Vext,OUTPUT);
+	digitalWrite(Vext, LOW);
+}
+
+void LoRaClass::VextOFF(void) //Vext default OFF
+{
+	pinMode(Vext,OUTPUT);
+	digitalWrite(Vext, HIGH);
+}
+
+int16_t LoRaClass::standby(){
+  return (radio.standby());
+}
+
+void setFlagTimeout(void) {
+  // we timed out, set the flag
+  timeoutFlag = true;
+}
+
+void setFlagDetected(void) {
+  // we got a preamble, set the flag
+  detectedFlag = true;
+}
+
+int LoRaClass::begin()
+{
+  float freq = LORA_FREQUENCY; 
+  float bw = LORA_BW; 
+  uint8_t sf = LORA_SF; 
+  uint8_t cr = LORA_CR; 
+  uint8_t syncWord = RADIOLIB_SX127X_SYNC_WORD; 
+  int8_t power = LORA_POWER; 
+  uint16_t preambleLength = 8; 
+  uint8_t gain = 0;
+
   #if defined( WIFI_LoRa_32_V3 ) 
       SPI.begin(SCK,MISO,MOSI,SS);
       /*int16_t begin(float freq = 434.0, float bw = 125.0, uint8_t sf = 9, uint8_t cr = 7, 
@@ -134,39 +123,57 @@ int LoRaClass::begin(long frequency,bool PABOOST)
       radio.setSpreadingFactor(LORA_SF);
       radio.setOutputPower(TRANSMIT_POWER);
 
-#if ENABLE_RX_INTERRUPT
+  #if ENABLE_RX_INTERRUPT
       // Set the callback function for received packets
       radio.setDio1Action(rx);
       radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);      
-#endif
-
-  #else //( WIFI_LoRa_32_V2 ) 
-  int state = radio.begin();
-
-  // set the function that will be called
-  // when new packet is received
-  radio.setDio0Action(setFlag, RISING);
-
-#if ROUTER
-    // send the first packet on this node
-    //sprintf(frame,"%s%d",frame1,count1);
-    //count1++;
-    //transmissionState = radio.startTransmit(frame);
-    //transmitFlag = true;
-#else
-    // start listening for LoRa packets on this node
-    state = radio.startReceive();
-    if (state == RADIOLIB_ERR_NONE) {
-      Serial.println(F("success!"));
-    } else {
-      Serial.print(F("failed, code "));
-      Serial.println(state);
-      while (true) { delay(10); }
-    }
-#endif
-
   #endif
 
+#else //( WIFI_LoRa_32_V2 ) 
+
+  VextON();
+
+  // Initialize the radio
+  setPins(SS,RST_LoRa,DIO0);
+
+  int state = radio.begin(freq,bw,sf,cr,syncWord, power, preambleLength, gain);
+  if (state == RADIOLIB_ERR_NONE) {
+    log_i("Radio begin success!");
+    
+  } else {
+    log_v("failed, code =%d",state);
+    while (true) { delay(10); }
+  }
+  // set the function that will be called
+  // when LoRa preamble is not detected within CAD timeout period
+  radio.setDio0Action(setFlagTimeout, RISING);
+
+  // set the function that will be called
+  // when LoRa preamble is detected
+  //radio.setDio1Action(setFlagDetected, RISING);
+
+  #if ROUTER
+      // send the first packet on this node
+      //sprintf(frame,"%s%d",frame1,count1);
+      //count1++;
+      //transmissionState = radio.startTransmit(frame);
+      //transmitFlag = true;
+  #else
+      // start listening for LoRa packets on this node
+      state = radio.startReceive();
+      if (state == RADIOLIB_ERR_NONE) {
+        Serial.println(F("success!"));
+      } else {
+        Serial.print(F("failed, code "));
+        Serial.println(state);
+        while (true) { delay(10); }
+      }
+  #endif
+
+#endif
+  //teste rff
+  PacketFactory::setMaxPacketSize(MAX_PACKET_SIZE);
+  
   return 1;
 }
 
@@ -176,6 +183,56 @@ void LoRaClass::end()
   sleep();
   // stop SPI
   SPI.end();
+}
+
+void LoRaClass::onReceive(void) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+#if 0
+    xHigherPriorityTaskWoken = xTaskNotifyFromISR(
+        LoraMesher::getInstance().ReceivePacket_TaskHandle,
+        0,
+        eSetValueWithoutOverwrite,
+        &xHigherPriorityTaskWoken);
+
+    if (xHigherPriorityTaskWoken == pdTRUE)
+        portYIELD_FROM_ISR();
+#endif
+
+}
+
+//TODO: Retry start receiving if it fails
+void LoRaClass::clearDioActions () {
+    radio.clearDio0Action();
+    radio.clearDio1Action();
+}
+
+void LoRaClass::setDioActionsForReceivePacket() {
+    clearDioActions();
+
+  #if defined( WIFI_LoRa_32_V2 ) 
+    //radio.setDioActionForReceiving(onReceive);
+    //radio.setDio0Action(onReceive, RISING);
+  #endif
+
+}
+
+void LoRaClass::restartRadio() {
+    radio.reset();
+    //initializeLoRa();
+    log_e("Restarting radio DONE");
+}
+
+int LoRaClass::startReceiving() {
+    //setDioActionsForReceivePacket();
+
+    int res = radio.startReceive();
+    if (res != 0) {
+        log_e("Starting receiving gave error: %d", res);
+        restartRadio();
+        return startReceiving();
+    }
+    return res;
 }
 
 int LoRaClass::beginPacket(int implicitHeader)
@@ -190,6 +247,7 @@ int LoRaClass::beginPacket(int implicitHeader)
   // reset FIFO address and paload length
   writeRegister(REG_FIFO_ADDR_PTR, 0);
   writeRegister(REG_PAYLOAD_LENGTH, 0);
+  
   return 1;
 }
 
@@ -247,7 +305,7 @@ int LoRaClass::parsePacket(int size)
     // read packet length
     if (_implicitHeaderMode) {
       packetLength = readRegister(REG_PAYLOAD_LENGTH);
-    } else {
+    } else {4
       packetLength = readRegister(REG_RX_NB_BYTES);
     }
     // set FIFO address to current RX address
@@ -263,6 +321,7 @@ int LoRaClass::parsePacket(int size)
     writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_RX_SINGLE);
   }
 #else
+
   if ((irqFlags & IRQ_RX_DONE_MASK) && (irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
     // received a packet
     _packetIndex = 0;
@@ -272,6 +331,7 @@ int LoRaClass::parsePacket(int size)
     } else {
       packetLength = readRegister(REG_RX_NB_BYTES);
     }
+    //log_i("irqflags1 =%2x packetsize=%d",irqFlags,packetLength);
     // set FIFO address to current RX address
     writeRegister(REG_FIFO_ADDR_PTR, readRegister(REG_FIFO_RX_CURRENT_ADDR));
     // put in standby mode
@@ -681,26 +741,10 @@ void LoRaClass::onDio0Rise()
   loramesh.handleDio0Rise();
 }
 
-LoRaClass loramesh;
 
-#if 0
-uint8_t calc_crc (String data,size_t len,char *pframe) {
-   uint8_t i;
-   char buf[30];
-
-   for (i=0;i<len;i++){
-     buf[0] = (char) data.c_str();
-   }
-   log_i("len=%d %2x %2x %2x %2x",len, buf[0],buf[1],buf[2],buf[3]);
-   return len;
-}
-#endif
-
-void LoRaClass::SendFrame(String data,size_t len)
-{
-  String var1;
-  uint8_t len1=0;
-  char buf[10];
+bool LoRaClass::sendPacket(uint8_t* p,uint8_t len) {
+    
+    //waitBeforeSend(1);
 
 #if  defined ( WIFI_LoRa_32_V3 )
   //int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
@@ -712,37 +756,72 @@ void LoRaClass::SendFrame(String data,size_t len)
 
 #else  //WIFI_LoRa_32_V2
 
-  // send packet
-  //loramesh.beginPacket();
-  /*
-  * loramesh.setTxPower(txPower,RFOUT_pin);
-  * txPower -- 0 ~ 20
-  * RFOUT_pin could be RF_PACONFIG_PASELECT_PABOOST or RF_PACONFIG_PASELECT_RFO
-  *   - RF_PACONFIG_PASELECT_PABOOST -- LoRa single output via PABOOST, maximum output 20dBm
-  *   - RF_PACONFIG_PASELECT_RFO     -- LoRa single output via RFO_HF / RFO_LF, maximum output 14dBm
-  */
-  //loramesh.setTxPower(14,RF_PACONFIG_PASELECT_PABOOST);
-  //loramesh.print(data);
-  //loramesh.endPacket();
+    //clearDioActions();
 
-  // send another one
-  //disableCrc();
-  //enableCrc();
-  //len1 = calc_crc(data,len,frame);
-  transmissionState = radio.startTransmit(data);
+    //Blocking transmit, it is necessary due to deleting the packet after sending it. 
+    int transmissionState = radio.transmit(p, len,1);
 
-  // the previous operation was transmission, listen for response
-  // print the result
-  if (transmissionState == RADIOLIB_ERR_NONE) {
-    log_i("transmission finished!");
+    //Start receiving again after sending a packet
+    startReceiving();
+
+   if (transmissionState == RADIOLIB_ERR_NONE) {
+    return true;
   } else {
-    log_e("failed, code=%d ",transmissionState);
-  }
-
+    log_e("transmission failed, code=%d ",transmissionState);
+    return false;
+  }   
 
 #endif
 
+    return true;
 }
+
+#if 0
+void LoRaClass::sendPackets() {
+
+  int sendCounter = 0;
+  uint8_t sendId = 0;
+  uint8_t resendMessage = 0;
+  uint16_t nextHop=0;
+
+  while (ToSendPackets->getLength() > 0) {
+
+    log_e("sendPackets");
+    ToSendPackets->setInUse();
+
+    QueuePacket<Packet<uint8_t>>* tx = ToSendPackets->Pop();
+
+    ToSendPackets->releaseInUse();
+
+    if (tx) {
+        if (tx->packet->src == SOURCE_ADDRESS)
+            tx->packet->id = sendId++;
+
+        //If the packet has a data packet and its destination is not broadcast add the via to the packet and forward the packet
+        if (PacketService::isDataPacket(tx->packet->type) && tx->packet->dst != BROADCAST_ADDR) {
+            //uint16_t nextHop = RoutingTableService::getNextHop(tx->packet->dst);
+            nextHop = 1;
+            //Next hop not found
+            if (nextHop == 0) {
+                PacketQueueService::deleteQueuePacketAndPacket(tx);
+                //incDestinyUnreachable();
+                continue;
+            }
+
+            //(reinterpret_cast<DataPacket*>(tx->packet))->via = nextHop;
+        }
+
+        //recordState(LM_StateType::STATE_TYPE_SENT, tx->packet);
+
+        //Send packet
+        bool hasSend = sendPacket(tx->packet);
+
+        sendCounter++;
+    } 
+  }
+}
+#endif
+
 uint32_t getRssi(void) {
   uint32_t retRssi=0;
 
@@ -834,6 +913,29 @@ uint8_t LoRaClass::ReceiveFrame(char *pframe) {
 #endif
 #endif
 
-
   return packetSize;
 }
+
+void LoRaClass::addToSendOrderedAndNotify(QueuePacket<Packet<uint8_t>>* qp) {
+    PacketQueueService::addOrdered(ToSendPackets, qp);
+    //Notify the sendData task handle
+    //xTaskNotify(SendData_TaskHandle, 0, eSetValueWithOverwrite);
+}
+
+#if 0
+void LoRaClass::createPacketAndSend(uint16_t dst, uint8_t *payload, uint8_t payloadSize) {
+    //Cannot send an empty packet
+    if (payloadSize == 0)
+        return;
+
+    //Get the size of the payload in bytes
+    size_t payloadSizeInBytes = payloadSize * sizeof(uint8_t);
+
+    //Create a data packet with the payload
+    DataPacket* dPacket = createDataPacket(dst, 1, DATA_P, reinterpret_cast<uint8_t*>(payload), payloadSizeInBytes);
+
+    //Create the packet and set it to the send queue
+    //setPackedForSend((uint8_t *)dPacket, 1);
+}  
+
+#endif

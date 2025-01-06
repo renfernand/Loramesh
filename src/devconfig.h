@@ -7,11 +7,33 @@
 //define se o nó sensor será um ED (ROUTER=0) ou RT (ROUTER=1) 
 #define ROUTER 1
 
+#define MAX_ADDR 5
+#if ROUTER
+#define MY_ADDR 1
+#else
+#define MY_ADDR 2
+#endif
+#define ED1_ADDR 2
+
+#define BROADCAST_ADDR 0xFFFF
+#define BYTE_CRC 0x66
+#define SOURCE_ADDRESS 1
+
 //define se vai usar ou nao o Display Oled da placa 
 #define DISPLAY_ENABLE 0
 
-
 #define ENABLE_RX_INTERRUPT 0
+// Packet types
+#define NEED_ACK_P 0b00000011
+#define DATA_P     0b00000010
+#define HELLO_P    0b00000100
+#define ACK_P      0b00001010
+#define XL_DATA_P  0b00010010
+#define LOST_P     0b00100010
+#define SYNC_P     0b01000010
+
+
+#define MAX_PACKET_SIZE  30
 
 #ifndef LED_BUILTIN
 //#define LED_BUILTIN 13
@@ -28,8 +50,9 @@
    470E6
    868E6 
    915E6 */
-#define LORA_FREQUENCY_V3 915.0 
-#define LORA_FREQUENCY_V2 915E6 
+#define LORA_FREQUENCY_V3 868.0 
+#define LORA_FREQUENCY_V2 868E0 
+#define LORA_FREQUENCY 868.0 
 
 /* LoRa bandwidth in kHz.  Defaults to 125.0 kHz.
 125.0
@@ -41,6 +64,7 @@
 // Allowed values are 7.8, 10.4, 15.6, 20.8, 31.25, 41.7, 62.5, 125.0, 250.0 and 500.0 kHz.
 #define LORA_BW_V3 125.0
 #define LORA_BW_V2 125E3
+#define LORA_BW 125.0
 
 /*Output power in dBm. Defaults to 10 dBm.
   range from 10 to 20 dBm*/
@@ -55,6 +79,19 @@
 
 /* cr */
 #define LORA_CR 5
+
+typedef enum {
+   FCT_BEACON=1,
+   FCT_JOIN,
+   FCT_DATA
+} functioncode;
+
+typedef enum  {
+    ST_RXWAIT,
+    ST_RXBEFORE,
+    ST_RXAFTER,
+    ST_TXACK
+}statemac;
 
 
 

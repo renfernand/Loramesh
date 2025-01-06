@@ -10,6 +10,6 @@ Descricao:
    -Inicio do codigo para rodar projeto loramesh (ainda em desenvolvimento)
    este codigo somente envia e recebe frames de diferentes tamanhos para 2 placas (ROUTER=1 envia e ROUTER=0 recebe).
 
-   
+   -Esta versao agora consegue enviar e receber os pacotes de forma mais estavel...Ele nao esta usando tarefas ainda, mas ele consegue enviar e receber de uma placa End device. 
    
    

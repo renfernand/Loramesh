@@ -16,6 +16,7 @@ Heltec_ESP32::Heltec_ESP32()
  
 }
 
+
 Heltec_ESP32::~Heltec_ESP32()
 {
 #if defined( WIFI_Kit_32 ) || defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) || defined( WIFI_LoRa_32_V3 )
@@ -24,29 +25,9 @@ Heltec_ESP32::~Heltec_ESP32()
 }
 
 
-void Heltec_ESP32::begin(bool DisplayEnable, bool LoRaEnable, bool SerialEnable, bool PABOOST, long BAND) 
-{
+void Heltec_ESP32::begin() {
 
-#if defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) || defined( Wireless_Stick_Lite ) || defined(WIFI_Kit_32) || defined( Wireless_Bridge ) || defined( WIFI_LoRa_32_V3 ) 
-	VextON();
-#endif
-
-	// UART
-	if (SerialEnable) {
-		Serial.begin(9600);
-		Serial.flush();
-		delay(50);
-		Serial.print("Serial initial done\r\n");
-	}
-
-    #if ROUTER
-	log_i("DEVICE IS A ROUTER!!!! \r\n");
-    #else
-	log_i("DEVICE IS A END DEVICE!!!! \r\n");
-    #endif
-
-	// OLED
-	if (DisplayEnable)
+#if DISPLAY_ENABLE 
 	{
 #if defined( Wireless_Stick_Lite ) || defined( Wireless_Bridge )
 		if(SerialEnable)		{
@@ -72,90 +53,33 @@ void Heltec_ESP32::begin(bool DisplayEnable, bool LoRaEnable, bool SerialEnable,
 		display->drawString(0, 0, "OLED initial done!");
 		display->display();
 
-		if (SerialEnable){
-			Serial.print("you can see OLED printed OLED initial done!\r\n");
-		}
+		log_i("you can see OLED printed OLED initial done!\r\n");
 #endif
 	}
-
-	// LoRa INIT
-	if (LoRaEnable)
-	{
-#if defined(WIFI_Kit_32)
-		if(SerialEnable && WIFI_Kit_32){
-			Serial.print("The WiFi Kit 32 not have LoRa function, LoRa option must be FALSE!!!\r\n");
-		}
 #endif
 
-#if defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) || defined( Wireless_Stick_Lite ) || defined( Wireless_Bridge )  ||  defined( WIFI_LoRa_32_V3 )
-
-		LoRa.setPins(SS,RST_LoRa,DIO0);
-		if (!LoRa.begin(BAND,PABOOST))
-		{
-			if (SerialEnable){
-				log_e("Starting LoRa failed!\r\n");
-			}
-#if defined( WIFI_Kit_32 ) || defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) 
-			if(DisplayEnable){
-				display->clear();
-				display->drawString(0, 0, "Starting LoRa failed!");
-				display->display();
-				delay(300);
-			}
-#endif
-			while (1);
-		}
-		if (SerialEnable){
-			//Serial.print("LoRa Initial success!\r\n");
-			freq = LORA_FREQUENCY_V2/1E6;
-			bw = (uint32_t) LORA_BW_V3;
-			sf =  LORA_SF;
-			log_i("Radio Lora Freq=%d Bw=%d Sf=%d",freq,bw,sf);
-		}
-#if defined( WIFI_Kit_32 ) || defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) 
-		if(DisplayEnable){
-			display->clear();
-			display->drawString(0, 0, "LoRa Initial success!");
-			display->display();
-			delay(300);
-		}
-#endif
-
-#endif
-	}
 #if defined( WIFI_Kit_32 ) || defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) 	
 	pinMode(LED,OUTPUT);
 #endif
 
-#if DISPLAY_ENABLE
-		//display->clear();
-		display->drawString(0, 10, "Radio Lora Ok!!!!");
-		log_i("Radio Lora Ok!!!!");
 #if ROUTER		
+#if DISPLAY_ENABLE
 		display->drawString(0, 20, "Device is a router!!!!");
+	#endif
 		log_i("Device is a router!!!!");
 #else		
+    #if DISPLAY_ENABLE
 		display->drawString(0, 20, "Device is a end device!!!!");
+	#endif
 		log_i("Device is a end device!!!!");
 #endif
+    #if DISPLAY_ENABLE
 		display->display();
 		delay(300);
 #endif
 
-
 }
 
-void Heltec_ESP32::VextON(void)
-{
-	pinMode(Vext,OUTPUT);
-	digitalWrite(Vext, LOW);
-}
-
-void Heltec_ESP32::VextOFF(void) //Vext default OFF
-{
-	pinMode(Vext,OUTPUT);
-	digitalWrite(Vext, HIGH);
-}
 
 void Heltec_ESP32::DisplayShow(char *pframe) 
 {

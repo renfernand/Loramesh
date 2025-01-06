@@ -2,7 +2,6 @@
 #include "loramesh.h"
 #include <RadioLib.h>
 #include "radio.h"
-#include "QueuePacket.h"
 
 #if defined ( WIFI_LoRa_32_V3 )
 #include <modules/sx126x/sx1262.h>
@@ -171,8 +170,6 @@ int LoRaClass::begin()
   #endif
 
 #endif
-  //teste rff
-  PacketFactory::setMaxPacketSize(MAX_PACKET_SIZE);
   
   return 1;
 }
@@ -916,26 +913,3 @@ uint8_t LoRaClass::ReceiveFrame(char *pframe) {
   return packetSize;
 }
 
-void LoRaClass::addToSendOrderedAndNotify(QueuePacket<Packet<uint8_t>>* qp) {
-    PacketQueueService::addOrdered(ToSendPackets, qp);
-    //Notify the sendData task handle
-    //xTaskNotify(SendData_TaskHandle, 0, eSetValueWithOverwrite);
-}
-
-#if 0
-void LoRaClass::createPacketAndSend(uint16_t dst, uint8_t *payload, uint8_t payloadSize) {
-    //Cannot send an empty packet
-    if (payloadSize == 0)
-        return;
-
-    //Get the size of the payload in bytes
-    size_t payloadSizeInBytes = payloadSize * sizeof(uint8_t);
-
-    //Create a data packet with the payload
-    DataPacket* dPacket = createDataPacket(dst, 1, DATA_P, reinterpret_cast<uint8_t*>(payload), payloadSizeInBytes);
-
-    //Create the packet and set it to the send queue
-    //setPackedForSend((uint8_t *)dPacket, 1);
-}  
-
-#endif

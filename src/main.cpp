@@ -1,7 +1,6 @@
 #include "devconfig.h"
 #include "heltec.h"
 #include "Lora\loramesh.h"
-#include "Lora\DataPacket.h"
 #include <Wire.h>
 #include <RadioLib.h>
 #include "esp_log.h"
@@ -36,14 +35,8 @@ uint16_t data1 = 0x3344;
 //Tempo do último envio
 long lastSendTime = 0;
 
-struct dataPacket {
-    uint32_t counter = 0;
-};
-
 uint8_t wait_res = 0;
 uint8_t send_req = 0;
-
-dataPacket* helloPacket = new dataPacket;
 
 //Intervalo entre os envios
 #define INTERVAL 2000

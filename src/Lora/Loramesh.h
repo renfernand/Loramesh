@@ -3,13 +3,7 @@
 
 #include <Arduino.h>
 #include <SPI.h>
-#include "LinkedQueue.hpp"
-#include "AppPacket.h"
-#include "ControlPacket.h"
-#include "DataPacket.h"
-#include "QueuePacket.h"
-#include "PacketQueueService.h"
-#include "Packet.h"
+
 
 #if defined( WIFI_LoRa_32_V3 )
 #define LORA_DEFAULT_SS_PIN     8
@@ -138,9 +132,7 @@ public:
   
   void dumpRegisters(Stream& out);
   void createPacketAndSend(uint16_t dst, uint8_t* payload, uint8_t payloadSize);
-  DataPacket* createDataPacket(uint16_t dst, uint16_t src, uint8_t type, uint8_t* payload, uint8_t payloadSize);
-  //void setPackedForSend(Packet<uint8_t>* p, uint8_t priority); 
-
+  
     /**
      * @brief Get the Instance of the LoRaMesher
      *
@@ -169,11 +161,8 @@ public:
 
         //Get the size of the payload in bytes
         size_t payloadSizeInBytes = payloadSize * sizeof(T);
-        //Create a data packet with the payload
-        DataPacket* dPacket = PacketService::createDataPacket(dst, LOCAL_ADDRESS, DATA_P, reinterpret_cast<uint8_t*>(payload), payloadSizeInBytes);
 
-        //Create the packet and set it to the send queue
-        setPackedForSend(reinterpret_cast<Packet<uint8_t>*>(dPacket), DEFAULT_PRIORITY);
+
     }
 
 
@@ -189,28 +178,7 @@ private:
   uint8_t singleTransfer(uint8_t address, uint8_t value);
   static void onDio0Rise();
 
-  LM_LinkedList<AppPacket<uint8_t>>* ReceivedAppPackets = new LM_LinkedList<AppPacket<uint8_t>>();
-
-  LM_LinkedList<QueuePacket<Packet<uint8_t>>>* ReceivedPackets = new LM_LinkedList<QueuePacket<Packet<uint8_t>>>();
-
-  LM_LinkedList<QueuePacket<Packet<uint8_t>>>* ToSendPackets = new LM_LinkedList<QueuePacket<Packet<uint8_t>>>();
-
-  void addToSendOrderedAndNotify(QueuePacket<Packet<uint8_t>>* qp);
-    /**
-     * @brief Sets the packet in a Fifo with priority and will send the packet when needed.
-     *
-     * @param p packet<uint8_t>*
-     * @param priority Priority set DEFAULT_PRIORITY by default. 0 most priority
-     */
-    void setPackedForSend(Packet<uint8_t>* p, uint8_t priority) {
-        //ESP_LOGI(LM_TAG, "Adding packet to Q_SP");
-        QueuePacket<Packet<uint8_t>>* send = PacketQueueService::createQueuePacket(p, priority);
-        //ESP_LOGI(LM_TAG, "Created packet to Q_SP");
-        addToSendOrderedAndNotify(send);
-        log_i ("setPackedForSend");
-        //TODO: Using vTaskDelay to kill the packet inside LoraMesher
-    }
-
+  
 
   SPISettings _spiSettings;
   int _ss;

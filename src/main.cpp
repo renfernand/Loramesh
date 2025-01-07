@@ -156,7 +156,7 @@ bool receivePacket()
         timestamp = gettimestamp((uint8_t *)rxpacket,packetSize);
         retcrc = checkcrc((uint8_t *)rxpacket,packetSize);
 
-        log_i("Rx len=%d src=%d dest=%d fct=%d invid=%2x crc=%d ",packetSize, srcaddress,dstaddress,fct, invokeid, retcrc);
+        log_i("Rx len=%d src=%d dest=%d fct=%d invid=%2x crc=%d ",packetSize, srcaddress,dstaddress,fct, resInvokeid, retcrc);
 
         if ((address == MY_ADDR) && (retcrc == 1)) {
            //log_i("Receive len[%d]=%2x invokeid=%d",packetSize, invokeid);
@@ -254,30 +254,21 @@ uint8_t sendPacketReq(long timestamp)
 
 }
 
-#if 0
 void RouterTask(void * parameter) {
 
     bool ret=0;
-    
-    for(;;){
-        log_i("RouterTask");
-        
-        //Se passou o tempo definido em INTERVAL desde o último envio
-        if (millis() - lastSendTime > INTERVAL){
+    uint8_t framesize=0;
 
-            //Marcamos o tempo que ocorreu o último envio
+    for(;;){
+        if (millis() - lastSendTime > INTERVAL){
             lastSendTime = millis();
-            log_i("SendPacket %d",lastSendTime);
-            //Envia o pacote para informar ao Slave que queremos receber os dados
-            //send();
-            //sendPacket();
-            //loramesh.SendFrame(frame1,1);
-            loramesh.createPacketAndSend(BROADCAST_ADDR, helloPacket, 1);          
+            wait_res = 0;
+            send_req = 1;
         }
 
-        //if  (receivePacket()) {
-        //    log_i("Receive=%2x %2x %2x",rxpacket[0],rxpacket[1],rxpacket[2]);
-        //}
+        if (wait_res){
+            ret = receivePacket();
+        }
 
         vTaskDelay(10 / portTICK_PERIOD_MS);
 
@@ -285,34 +276,23 @@ void RouterTask(void * parameter) {
     } 
 }
 
+uint8_t sendResp = 0;
+
 void EndDevTask(void * parameter) {
 
+    uint8_t framesize=0;
+    uint16_t data1=0x1234;
     for( ;; )
     {
-
-        if  (receivePacket()) {
-            
-            vTaskDelay(10 / portTICK_PERIOD_MS);
-
-            if (0) {  
-            //if(memcmp(received, FrameMaster, sizeof(FrameMaster)) == 0){
-                //Cria o pacote para envio
-                loramesh.beginPacket();
-
-                for (int i = 0; i < sizeof(FrameSlave); i++) {
-                loramesh.write((uint8_t)FrameSlave[i]);
-                }
-                //Finaliza e envia o pacote
-                loramesh.endPacket();
-            
-            }
-        }
+        if  (receivePacket()) 
+            sendResp = 1;
+        else
+            sendResp = 0;
 
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
-
 }
-#endif
+
 
 void standby() {
     //Get actual priority
@@ -368,11 +348,11 @@ void setup()
 
 
 #if ROUTER
-   // xTaskCreatePinnedToCore( RouterTask,"Router_TaskHandle",1024, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
+   xTaskCreatePinnedToCore( RouterTask,"Router_TaskHandle",1024, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
     wait_res = 0;
     send_req = 1;
 #else
-   //xTaskCreatePinnedToCore( EndDevTask,"EndDev_TaskHandle",1024, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
+    xTaskCreatePinnedToCore( EndDevTask,"EndDev_TaskHandle",1024, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
 #endif
 
    // start();
@@ -386,16 +366,7 @@ uint8_t address;
 uint8_t framesize;
 int len = 0;
 
-#if ROUTER
-    if (millis() - lastSendTime > INTERVAL){
-        lastSendTime = millis();
-        wait_res = 0;
-        send_req = 1;
-    }
-
-    if (wait_res){
-        ret = receivePacket();
-    }
+#if 1 //ROUTER
 
     if (send_req){
         //Marcamos o tempo que ocorreu o último envio
@@ -406,49 +377,17 @@ int len = 0;
         log_i("SendPacket len=%d src=%d dst=%d invid=%d time=%d",framesize,srcaddress,dstaddress,invokeid, lastSendTime);
     }
 
-
-
 #else
-    
-    ret = receivePacket();
-    if (ret){
+
+    if (sendResp == 1){
         delay(10);
-        sendPacketRes(srcaddress,data1);            
-    }    
-
-#if 0
-    packetSize = loramesh.parsePacket(0);
-    if (packetSize)
-    {
-        clearBuffer(rxpacket, BUFFER_SIZE);
-
-        while (loramesh.available() && len < BUFFER_SIZE - 1) {
-            rxpacket[len++] = (char)loramesh.read(); // Lê o pacote byte a byte
-        }
-
-        rxpacket[len] = '\0'; // Termina string
-
-        // Confirmação de recepção
-        address = getaddress((uint8_t *)rxpacket);
-        ret = checkcrc((uint8_t *)rxpacket,packetSize);
-
-        if ((address == MY_ADDR) && (ret == 1)){
-           log_i("Receive OK");
-           delay(10);
-           sendPacketRes();            
-        }
-        else
-           log_i("Receive Error len[%d] addr=%d crc=%d",packetSize, address,retcrc);
-
-     }
-
-#endif
-#endif
+        framesize = sendPacketRes(srcaddress,data1);
+        sendResp = 0;
+    }
+              
+   
+ #endif
     delay(10);
-
-    //if (Rx1Handle != NULL) {
-    //   vTaskDelete(Rx1Handle);
-   // }
 
 }
 

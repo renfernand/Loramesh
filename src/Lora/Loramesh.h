@@ -44,26 +44,47 @@ void LoraSendFrame(String data,size_t len);
 uint8_t LoraReceiveFrame(char *pframe);
 uint32_t getRssi(void);
 
+typedef struct {
+    uint8_t srcaddress;
+    uint8_t dstaddress;
+    uint8_t fct;
+    uint16_t seqnum=0;
+    uint32_t timestamp;
+    uint16_t data1 = 0x3344;
+    uint8_t rxpacket[BUFFER_SIZE];
+} strPacket;
+
+
+typedef struct  {
+    uint16_t devserialnumber;
+    uint8_t  devtype;
+    uint8_t  devaddr;
+} strDevicedescription;
+
+
 #if defined (__STM32F1__)
 inline unsigned char  digitalPinToInterrupt(unsigned char Interrupt_pin) { return Interrupt_pin; } //This isn't included in the stm32duino libs (yet)
 #define portOutputRegister(port) (volatile byte *)( &(port->regs->ODR) ) //These are defined in STM32F1/variants/generic_stm32f103c/variant.h but return a non byte* value
 #define portInputRegister(port) (volatile byte *)( &(port->regs->IDR) ) //These are defined in STM32F1/variants/generic_stm32f103c/variant.h but return a non byte* value
 #endif
 
+enum LoraModules {
+    SX1276_MOD,
+    SX1262_MOD,
+    SX1278_MOD,
+    SX1268_MOD,
+    SX1280_MOD,
+};
+
 class LoRaClass : public Stream {
 public:
+  strDevicedescription mydd;
+  strPacket lastpkt;
+
   LoRaClass();
 
-    enum LoraModules {
-        SX1276_MOD,
-        SX1262_MOD,
-        SX1278_MOD,
-        SX1268_MOD,
-        SX1280_MOD,
-    };
-
-
   int16_t standby();
+
 
   int begin();
   void end();
@@ -76,10 +97,23 @@ public:
     
   void restartRadio(void);
   int startReceiving(void);
+  uint8_t sendPacketRes(uint8_t dstaddr, uint32_t dtvalue);
+  uint8_t sendPacketReq(long timestamp);
+
   void setDioActionsForReceivePacket(void);
   void clearDioActions(void);
   void onReceive(void);
+  uint8_t getrouteaddr(void);
+  uint8_t checkcrc (uint8_t *packet, uint8_t len);
+  uint8_t getaddress(uint8_t *packet,uint8_t len);
+  uint16_t gettimestamp(uint8_t *packet,uint8_t len);
+  uint8_t getfunction(uint8_t *packet,uint8_t len);
+  uint16_t getseqnum(uint8_t *packet,uint8_t len);
+  uint16_t getLastSeqNum(void);
 
+  void clearBuffer(uint8_t *buffer, int size);
+  bool getdevicedescription(void);
+  
   uint8_t ReceiveFrame(char *pframe); 
 
   int beginPacket(int implicitHeader = false);
@@ -100,6 +134,7 @@ public:
   virtual void flush();
 
   void onReceive(void(*callback)(int));
+  bool receivePacket(void);
 
   void receive(int size = 0);
   void idle();

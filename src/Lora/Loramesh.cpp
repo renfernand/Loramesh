@@ -18,17 +18,20 @@ SX1276 radio = new Module(SS, DIO0, RST_LoRa, DIO1);
 
 LoRaClass loramesh;
 
+uint16_t invokeid=0;
+
+volatile bool messageReceived = false;
+
 // flag to indicate that a preamble was detected
 volatile bool detectedFlag = false;
 // flag to indicate that a preamble was not detected
 volatile bool timeoutFlag = false;
 
 volatile bool rxFlag = false;
-char buf [10];
-char Readback[50];
+//char Readback[50];
+//char frame[50];
 bool newvalue=0;
 int packetSize = 0;
-char frame[50];
 
 // save transmission states between loops
 int transmissionState = RADIOLIB_ERR_NONE;
@@ -39,6 +42,15 @@ bool transmitFlag = false;
 // flag to indicate that a packet was sent or received
 volatile bool operationDone = false;
 
+//table of node devices...
+//{DeviceID, DEV_TYPE, DeviceAddress}
+strDevicedescription devid[]={
+   {0x907F,DEV_TYPE_ROUTER,1},
+   {0x5006,DEV_TYPE_ENDDEV,2}
+};
+
+
+// ===========================
 LoRaClass::LoRaClass() :
   _spiSettings(8E6, MSBFIRST, SPI_MODE0),
   _ss(LORA_DEFAULT_SS_PIN), _reset(LORA_DEFAULT_RESET_PIN), _dio0(LORA_DEFAULT_DIO0_PIN),
@@ -88,8 +100,12 @@ void setFlagDetected(void) {
   detectedFlag = true;
 }
 
-int LoRaClass::begin()
-{
+// ISR for handling LoRa reception interrupt
+void onReceiveInterrupt() {
+  messageReceived = true;
+}
+
+int LoRaClass::begin() {
   float freq = LORA_FREQUENCY; 
   float bw = LORA_BW; 
   uint8_t sf = LORA_SF; 
@@ -98,6 +114,7 @@ int LoRaClass::begin()
   int8_t power = LORA_POWER; 
   uint16_t preambleLength = 8; 
   uint8_t gain = 0;
+  uint8_t ret=0;
 
   #if defined( WIFI_LoRa_32_V3 ) 
       SPI.begin(SCK,MISO,MOSI,SS);
@@ -145,32 +162,35 @@ int LoRaClass::begin()
   }
   // set the function that will be called
   // when LoRa preamble is not detected within CAD timeout period
-  radio.setDio0Action(setFlagTimeout, RISING);
+  //radio.setDio0Action(setFlagTimeout, RISING);
 
   // set the function that will be called
   // when LoRa preamble is detected
   //radio.setDio1Action(setFlagDetected, RISING);
 
-  #if ROUTER
-      // send the first packet on this node
-      //sprintf(frame,"%s%d",frame1,count1);
-      //count1++;
-      //transmissionState = radio.startTransmit(frame);
-      //transmitFlag = true;
-  #else
-      // start listening for LoRa packets on this node
-      state = radio.startReceive();
-      if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("success!"));
-      } else {
-        Serial.print(F("failed, code "));
-        Serial.println(state);
-        while (true) { delay(10); }
-      }
-  #endif
+  // Attach the interrupt to DIO0 pin
+  pinMode(DIO0, INPUT);
+  attachInterrupt(digitalPinToInterrupt(DIO0), onReceiveInterrupt, RISING);
+  
+  //get the device type and device address based in the chip id
+  ret = getdevicedescription();
+
+  if ((ret) && (mydd.devtype == DEV_TYPE_ENDDEV)) {
+    // start listening for LoRa packets on this node
+    radio.setDio0Action(onReceiveInterrupt, RISING);
+
+    state = radio.startReceive();
+    if (state == RADIOLIB_ERR_NONE) {
+      log_i("Starting receiving!");
+    } 
+    else {
+      log_e("Radio starting failed, code %d",state);
+      while (true) { delay(100); }
+    }
+
+  } 
 
 #endif
-  
   return 1;
 }
 
@@ -208,8 +228,7 @@ void LoRaClass::setDioActionsForReceivePacket() {
     clearDioActions();
 
   #if defined( WIFI_LoRa_32_V2 ) 
-    //radio.setDioActionForReceiving(onReceive);
-    //radio.setDio0Action(onReceive, RISING);
+    radio.setDio0Action(onReceiveInterrupt, RISING);
   #endif
 
 }
@@ -221,7 +240,7 @@ void LoRaClass::restartRadio() {
 }
 
 int LoRaClass::startReceiving() {
-    //setDioActionsForReceivePacket();
+    setDioActionsForReceivePacket();
 
     int res = radio.startReceive();
     if (res != 0) {
@@ -346,6 +365,287 @@ int LoRaClass::parsePacket(int size)
 
   return packetLength;
 }
+
+
+
+bool LoRaClass::getdevicedescription(){
+   uint8_t ret;
+   uint8_t mac[6];
+   esp_chip_info_t chip_info;
+   strDevicedescription *pdd = devid;
+
+#if 0
+  esp_read_mac(mac,ESP_MAC_WIFI_STA);
+  for (int i = 0; i < 6; i++) {
+    Serial.printf("%02X", mac[i]);
+    if (i < 5) {
+      Serial.print(":");
+    }
+  }
+
+  // Get Chip Info
+  esp_chip_info(&chip_info);
+
+//  Serial.printf("Cores: %d\n", chip_info.cores);
+//  Serial.printf("Chip Revision: %d\n", chip_info.revision);
+#endif
+
+  // Get the Unique Chip ID (Serial Number)
+  uint64_t chipId = ESP.getEfuseMac(); // 48-bit unique identifier
+  uint32_t chipidu = (uint32_t)(chipId >> 32);
+  uint32_t chipidl = (uint32_t)(chipId);
+
+  Serial.print("Hardware Serial Number (Chip ID): ");
+  Serial.println(chipidu, HEX); // Upper 32 bits
+
+  //Find the Device Address and device type
+  for (int i=0;i<sizeof(pdd);i++)
+  {
+    if (pdd->devserialnumber == chipidu) {
+        log_i("Device Description");
+        log_i("ChipID = %4x DevAddress=%d",pdd->devserialnumber, pdd->devaddr);
+        
+        memcpy(&mydd,pdd,sizeof(mydd));
+
+        if (pdd->devtype == DEV_TYPE_ROUTER)
+            log_i("Device is a Router");
+        else
+            log_i("Device is a End Device");
+        ret = 1;
+        break;
+    }
+    pdd++;   
+  }
+
+  if (ret == 0){
+    log_e("nao encontrei device description do device=%4x !!!!",chipidu);
+  }
+
+   return ret; 
+}
+
+uint8_t LoRaClass::getrouteaddr(){
+  
+  uint8_t rtaddr=0;
+  strDevicedescription *pdd = devid;
+
+  for (int i=0;i<sizeof(pdd);i++)
+  {
+    if (pdd->devtype == DEV_TYPE_ROUTER) {
+        rtaddr = pdd->devaddr;
+        break;
+    }
+    pdd++;   
+  }
+
+   return rtaddr; 
+}
+
+// Função para limpar o buffer
+void LoRaClass::clearBuffer(uint8_t *buffer, int size)
+{
+    for (int i = 0; i < size; i++)
+    {
+        buffer[i] = '\0';
+    }
+}
+
+uint16_t LoRaClass::getseqnum(uint8_t *packet,uint8_t len){
+    uint16_t aux;
+    uint8_t *pucaux = (uint8_t *) &aux;
+    if (len > 4){
+        *pucaux++ = packet[4];
+        *pucaux = packet[3];
+        //log_i ("seq.num=%d",aux);
+        return aux;
+    }
+    else
+        return 0;
+
+}
+
+uint8_t LoRaClass::getfunction(uint8_t *packet,uint8_t len){
+    uint8_t function;
+
+    if (len > 3){
+        function = packet[2];
+        //log_i ("function=%d",function);
+        return function;
+    }
+    else
+        return 0;
+
+}
+
+uint16_t LoRaClass::gettimestamp(uint8_t *packet,uint8_t len){
+    uint8_t timestamp;
+    uint8_t *pucaux = (uint8_t *) &timestamp;
+
+    if (len > 5){
+        *pucaux++ = packet[8];
+        *pucaux++ = packet[7];
+        *pucaux++ = packet[6];
+        *pucaux = packet[5];
+        //log_i ("timestamp=%4x",timestamp);
+        return timestamp;
+    }
+    else
+        return 0;
+
+}
+uint8_t LoRaClass::getaddress(uint8_t *packet,uint8_t len){
+  
+  lastpkt.srcaddress = packet[0];
+  lastpkt.dstaddress = packet[1];
+
+  //log_i("src=%d dst=%d",lastpkt.srcaddress,lastpkt.dstaddress);
+
+  if ((lastpkt.srcaddress < MAX_ADDR) && ((lastpkt.dstaddress < MAX_ADDR) || (lastpkt.dstaddress == BROADCAST_ADDR))) 
+    return 1;
+  else
+    return 0;
+
+}
+
+//Todo!!! implementar um CRC
+//checa somente o ultimo byte do frame é igual ao definido
+uint8_t LoRaClass::checkcrc (uint8_t *packet, uint8_t len){
+   
+   if (packet[len-1] == BYTE_CRC)
+    return 1;
+  else
+    return 0;
+}
+
+uint16_t LoRaClass::getLastSeqNum(){
+    return (invokeid-1);
+}
+
+uint8_t LoRaClass::sendPacketReq(long timestamp)
+{
+    uint8_t ret=0;
+    uint8_t pos=0;
+    uint8_t buf[BUFFER_SIZE];
+    uint8_t *pucaux = (uint8_t *) &invokeid;
+ 
+    buf[pos++] =  mydd.devaddr;
+    buf[pos++] =  BROADCAST_ADDR;
+    buf[pos++] =  FCT_BEACON;
+    buf[pos++] =  *(pucaux+1);
+    buf[pos++] =  *(pucaux+0);
+    pucaux = (uint8_t *) &timestamp;
+    buf[pos++] =  *(pucaux+3);
+    buf[pos++] =  *(pucaux+2);
+    buf[pos++] =  *(pucaux+1);
+    buf[pos++] =  *(pucaux+0);
+    buf[pos++] =  BYTE_CRC;
+
+    invokeid++;
+
+#if 1
+    ret = sendPacket(buf,pos);
+    if (ret){
+        log_i("REQ [%d] = %2x %2x %2x %2x %2x", pos, buf[0], buf[1],buf[2],buf[3], buf[4]);
+       return pos;
+    }
+    else
+       return 0;   
+#else
+  loramesh.beginPacket();
+  //print: adiciona os dados no pacote
+  for (int i = 0; i < sizeof(frame1); i++) {
+      loramesh.write((uint8_t)txpacket[i]);
+  }
+  loramesh.endPacket(); //retorno= 1:sucesso | 0: falha
+
+#endif   
+
+}
+
+uint8_t LoRaClass::sendPacketRes(uint8_t dstaddr, uint32_t dtvalue)
+{
+    uint8_t ret=0;
+    uint8_t pos=0;
+    uint8_t buf[BUFFER_SIZE];
+    uint8_t *pucaux = (uint8_t *) &lastpkt.seqnum; 
+
+    buf[pos++] =  mydd.devaddr;
+    buf[pos++] =  dstaddr;
+    buf[pos++] =  FCT_DATA;
+    buf[pos++] =  *(pucaux+1);
+    buf[pos++] =  *(pucaux+0);
+    pucaux = (uint8_t *) &dtvalue; 
+    buf[pos++] =  *(pucaux+3);
+    buf[pos++] =  *(pucaux+2);
+    buf[pos++] =  *(pucaux+1);
+    buf[pos++] =  *(pucaux+0);
+    buf[pos++] =  BYTE_CRC;
+
+#if 1
+    ret = sendPacket(buf,pos);
+    if (ret){
+        log_i("RES[%d]=%2x %2x %2x %2x %2x %2x %2x %2x", pos, buf[0], buf[1],buf[2],buf[3], buf[4], buf[5],buf[6],buf[7]);
+       return pos;
+    }
+    else
+       return 0;   
+#else
+  loramesh.beginPacket();
+  //print: adiciona os dados no pacote
+  for (int i = 0; i < sizeof(frame1); i++) {
+      loramesh.write((uint8_t)txpacket[i]);
+  }
+  loramesh.endPacket(); //retorno= 1:sucesso | 0: falha
+
+#endif    
+}
+
+
+bool LoRaClass::receivePacket()
+{
+    bool retcrc=0;
+    int packetSize = 0;
+
+    packetSize = loramesh.parsePacket(0);
+    if (packetSize) {
+        uint8_t ret=0;
+        int len = 0;
+        clearBuffer(lastpkt.rxpacket, BUFFER_SIZE);
+
+        while (loramesh.available() && len < BUFFER_SIZE - 1) {
+            lastpkt.rxpacket[len++] = (char)loramesh.read(); // Lê o pacote byte a byte
+        }
+
+        lastpkt.rxpacket[len] = '\0'; // Termina string
+
+        // verifica o srcaddress e dstaddress do pacote
+        ret = getaddress((uint8_t *)lastpkt.rxpacket,packetSize);
+        
+        log_i("Rx [%d]=%2x %2x %2x %2x %2x",packetSize, lastpkt.rxpacket[0],lastpkt.rxpacket[1],lastpkt.rxpacket[2],lastpkt.rxpacket[3],lastpkt.rxpacket[4]);
+
+        //verifica se o pacote recebido nao eh o mesmo que acabou de ser enviado
+        if ((ret) && ((lastpkt.srcaddress != mydd.devaddr))) {
+            lastpkt.fct       = getfunction((uint8_t *)lastpkt.rxpacket,packetSize);
+            lastpkt.seqnum    = getseqnum((uint8_t *)lastpkt.rxpacket,packetSize);
+            lastpkt.timestamp = gettimestamp((uint8_t *)lastpkt.rxpacket,packetSize);
+            retcrc = checkcrc((uint8_t *)lastpkt.rxpacket,packetSize);
+
+            //log_i("Rx len=%d src=%d dest=%d fct=%d seqnum=%d crc=%d ",packetSize, lastpkt.srcaddress,lastpkt.dstaddress,lastpkt.fct, lastpkt.seqnum, retcrc);
+
+            if ((retcrc == 1) && ((lastpkt.dstaddress == mydd.devaddr) || (lastpkt.dstaddress == BROADCAST_ADDR))) {
+                return 1;
+            }
+            else
+                return 0;
+        }
+        else
+           return 0;
+    }
+    else
+        return 0;
+
+}
+
 
 int LoRaClass::packetRssi()
 {
@@ -753,7 +1053,7 @@ bool LoRaClass::sendPacket(uint8_t* p,uint8_t len) {
 
 #else  //WIFI_LoRa_32_V2
 
-    //clearDioActions();
+    clearDioActions();
 
     //Blocking transmit, it is necessary due to deleting the packet after sending it. 
     int transmissionState = radio.transmit(p, len,1);

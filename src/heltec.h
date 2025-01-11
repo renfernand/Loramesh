@@ -27,11 +27,10 @@ class Heltec_ESP32 {
 //  void begin(bool DisplayEnable, bool LoRaEnable, bool SerialEnable, bool PABOOST, long BAND);
     void begin();
 
-    void DisplayShow(char *pframe);
-
-#if defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) || defined( Wireless_Stick_Lite ) || defined( Wireless_Bridge ) 
-//    LoRaClass LoRa;
-#endif
+    void DisplayClear(void);
+    void DisplayShow1(char *pframe);
+    void DisplayShow2(char *pframe);
+    void DisplayShow3(char *pframe);
 
 #if defined( WIFI_Kit_32 ) || defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) || defined( WIFI_LoRa_32_V3 )
     SSD1306Wire *display;

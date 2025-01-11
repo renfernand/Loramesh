@@ -7,20 +7,9 @@
 //define se o nó sensor será um ED (ROUTER=0) ou RT (ROUTER=1) 
 #define ROUTER 1
 
-#define MAX_ADDR 5
-#if ROUTER
-#define MY_ADDR 1
-#else
-#define MY_ADDR 2
-#endif
-#define ED1_ADDR 2
-
-#define BROADCAST_ADDR 0xFFFF
-#define BYTE_CRC 0x66
-#define SOURCE_ADDRESS 1
 
 //define se vai usar ou nao o Display Oled da placa 
-#define DISPLAY_ENABLE 0
+#define DISPLAY_ENABLE 1
 
 #define ENABLE_RX_INTERRUPT 0
 // Packet types
@@ -31,9 +20,27 @@
 #define XL_DATA_P  0b00010010
 #define LOST_P     0b00100010
 #define SYNC_P     0b01000010
+#define LOG_LOCAL_LEVEL CONFIG_LOG_MAXIMUM_LEVEL
+ 
+#define PABOOST 1
+#define RX_TIMEOUT_VALUE   1000
 
+#define MINIMUM_DELAY 900 
+
+#define MAX_ADDR 5
+#define BROADCAST_ADDR 0
+#define BYTE_CRC 0x66
+//#define SOURCE_ADDRESS 1
 
 #define MAX_PACKET_SIZE  30
+#define MAX_SLOTS 2
+#define BEACON_SLOT 0 
+#define DATA_SLOT   2 
+
+//Intervalo entre os envios
+#define SLOT_INTERVAL 1000
+
+#define BUFFER_SIZE           50 // Define the payload size here
 
 #ifndef LED_BUILTIN
 //#define LED_BUILTIN 13
@@ -81,18 +88,22 @@
 #define LORA_CR 5
 
 typedef enum {
+   DEV_TYPE_ROUTER=1,
+   DEV_TYPE_ENDDEV
+} devicetype;
+typedef enum {
    FCT_BEACON=1,
    FCT_JOIN,
    FCT_DATA
 } functioncode;
 
 typedef enum  {
+    ST_TXBEACON,
     ST_RXWAIT,
-    ST_RXBEFORE,
-    ST_RXAFTER,
-    ST_TXACK
+    ST_RXDONE,
+    ST_TXDATA,
+    ST_STANDBY
 }statemac;
-
 
 
 #endif

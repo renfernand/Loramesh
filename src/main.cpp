@@ -8,289 +8,89 @@
 #if DISPLAY_ENABLE
 #include "OLED\SSD1306.h"
 #endif
-
-TaskHandle_t Router_TaskHandle = nullptr;
-TaskHandle_t EndDev_TaskHandle = nullptr;
-
-LoRaClass &LoRa1 = LoRaClass::getInstance();
-extern LoRaClass loramesh;
-#define LOG_LOCAL_LEVEL CONFIG_LOG_MAXIMUM_LEVEL
- 
-#define PABOOST 1
-#define RX_TIMEOUT_VALUE                            1000
-
-#define MINIMUM_DELAY 900 
-
-#define BUFFER_SIZE                                 50 // Define the payload size here
-char txpacket[BUFFER_SIZE];
-char rxpacket[BUFFER_SIZE];
-uint8_t srcaddress;
-uint8_t dstaddress;
-uint16_t invokeid=0;
-uint16_t resInvokeid=0;
-uint8_t fct;
-uint32_t timestamp;
-uint16_t data1 = 0x3344;
-
-//Tempo do último envio
-long lastSendTime = 0;
-
-uint8_t wait_res = 0;
-uint8_t send_req = 0;
-
-//Intervalo entre os envios
-#define INTERVAL 2000
-
-uint8_t state;
-uint8_t countRxAfter=0;
-
-int count1=0;
-
-//attachInterrupt(GPIO_Pin, zcisr, RISING);
-uint32_t interval;
-uint16_t count = 0;
-
-int sensorValue;
-
-TaskHandle_t Rx1Handle = NULL;
-
 //#define ARDUINO_RUNNING_CORE 1
 
-void standby();
-void start();
+TaskHandle_t App_TaskHandle = nullptr;
+TaskHandle_t EndDev_TaskHandle = nullptr;
+statemac nextstate;
+uint16_t idx_response=0;
 
-// Função para limpar o buffer
-void clearBuffer(char *buffer, int size)
-{
-    for (int i = 0; i < size; i++)
-    {
-        buffer[i] = '\0';
-    }
-}
+extern LoRaClass loramesh;
 
-uint16_t getinvid(uint8_t *packet,uint8_t len){
-    uint16_t aux;
-    uint8_t *pucaux = (uint8_t *) &aux;
-    if (len > 4){
-        *pucaux++ = packet[4];
-        *pucaux = packet[3];
-        //log_i ("Invokeid=%d",invokeid);
-        return aux;
-    }
-    else
-        return 0;
+uint8_t actualslot=0;
+long lastSendTime = 0;
+uint8_t send_pct = 0;
+extern volatile bool messageReceived;
 
-}
 
-uint8_t getfunction(uint8_t *packet,uint8_t len){
-    uint8_t function;
-    if (len > 3){
-        function = packet[2];
-        //log_i ("function=%d",function);
-        return function;
-    }
-    else
-        return 0;
 
-}
-
-uint16_t gettimestamp(uint8_t *packet,uint8_t len){
-    uint8_t *pucaux = (uint8_t *) &timestamp;
-
-    if (len > 5){
-        *pucaux++ = packet[8];
-        *pucaux++ = packet[7];
-        *pucaux++ = packet[6];
-        *pucaux = packet[5];
-        //log_i ("timestamp=%4x",timestamp);
-        return timestamp;
-    }
-    else
-        return 0;
-
-}
-uint8_t getaddress(uint8_t *packet,uint8_t len){
-  
-  srcaddress = packet[0];
-  dstaddress = packet[1];
-
-  if ((srcaddress < MAX_ADDR) && (dstaddress < MAX_ADDR)) 
-    return dstaddress;
-  else
-    return 0;
-
-}
-
-//Todo!!! implementar um CRC
-//checa somente o ultimo byte do frame é igual ao definido
-uint8_t checkcrc (uint8_t *packet, uint8_t len){
-   
-   if (packet[len-1] == BYTE_CRC)
-    return 1;
-  else
-    return 0;
-}
-
-bool receivePacket()
-{
-    bool retcrc=0;
-    int packetSize = 0;
-
-    packetSize = loramesh.parsePacket(0);
-    if (packetSize)
-    {
-        uint8_t address;
-        int len = 0;
-        clearBuffer(rxpacket, BUFFER_SIZE);
-
-        while (loramesh.available() && len < BUFFER_SIZE - 1) {
-            rxpacket[len++] = (char)loramesh.read(); // Lê o pacote byte a byte
-        }
-
-        rxpacket[len] = '\0'; // Termina string
-
-        // Confirmação de recepção
-        address = getaddress((uint8_t *)rxpacket,packetSize);
-        fct     = getfunction((uint8_t *)rxpacket,packetSize);
-        resInvokeid = getinvid((uint8_t *)rxpacket,packetSize);
-        timestamp = gettimestamp((uint8_t *)rxpacket,packetSize);
-        retcrc = checkcrc((uint8_t *)rxpacket,packetSize);
-
-        log_i("Rx len=%d src=%d dest=%d fct=%d invid=%2x crc=%d ",packetSize, srcaddress,dstaddress,fct, resInvokeid, retcrc);
-
-        if ((address == MY_ADDR) && (retcrc == 1)) {
-           //log_i("Receive len[%d]=%2x invokeid=%d",packetSize, invokeid);
-            return 1;
-        }
-        else
-            return 0;
-    }
-    else
-        return 0;
-
-}
-
-uint8_t sendPacketRes(uint8_t dstaddr, uint16_t dtvalue)
-{
-    uint8_t ret=0;
-    uint8_t pos=0;
-    uint8_t buf[BUFFER_SIZE];
-    uint8_t *pucaux = (uint8_t *) &resInvokeid; 
-
-    srcaddress = MY_ADDR;
-    dstaddress = dstaddr;
-
-    buf[pos++] =  srcaddress;
-    buf[pos++] =  dstaddress;
-    buf[pos++] =  FCT_DATA;
-    buf[pos++] =  *(pucaux+1);
-    buf[pos++] =  *(pucaux+0);
-    pucaux = (uint8_t *) &dtvalue; 
-    buf[pos++] =  *(pucaux+1);
-    buf[pos++] =  *(pucaux+0);
-    buf[pos++] =  BYTE_CRC;
-
-#if 1
-    ret = loramesh.sendPacket(buf,pos);
-    if (ret){
-        log_i("RES[%d]=%2x %2x %2x %2x %2x %2x %2x %2x", pos, buf[0], buf[1],buf[2],buf[3],
-        buf[4], buf[5],buf[6],buf[7]);
-       return pos;
-    }
-    else
-       return 0;   
-#else
-  loramesh.beginPacket();
-  //print: adiciona os dados no pacote
-  for (int i = 0; i < sizeof(frame1); i++) {
-      loramesh.write((uint8_t)txpacket[i]);
-  }
-  loramesh.endPacket(); //retorno= 1:sucesso | 0: falha
-
-#endif    
-}
-
-uint8_t sendPacketReq(long timestamp)
-{
-    uint8_t ret=0;
-    uint8_t pos=0;
-    uint8_t buf[BUFFER_SIZE];
-    uint8_t *pucaux = (uint8_t *) &invokeid;
-
-    srcaddress = MY_ADDR;
-    dstaddress = ED1_ADDR;
-
-    buf[pos++] =  srcaddress;
-    buf[pos++] =  dstaddress;
-    buf[pos++] =  FCT_BEACON;
-    buf[pos++] =  *(pucaux+1);
-    buf[pos++] =  *(pucaux+0);
-    pucaux = (uint8_t *) &timestamp;
-    buf[pos++] =  *(pucaux+3);
-    buf[pos++] =  *(pucaux+2);
-    buf[pos++] =  *(pucaux+1);
-    buf[pos++] =  *(pucaux+0);
-    buf[pos++] =  BYTE_CRC;
-
-    invokeid++;
-
-#if 1
-    ret = loramesh.sendPacket(buf,pos);
-    if (ret)
-        //log_i("%2x %2x %2x %2x %2x %2x %2x %2x", buf[0], buf[1],buf[2],buf[3],
-        //buf[4], buf[5],buf[6],buf[7]);
-       return pos;
-    else
-       return 0;   
-#else
-  loramesh.beginPacket();
-  //print: adiciona os dados no pacote
-  for (int i = 0; i < sizeof(frame1); i++) {
-      loramesh.write((uint8_t)txpacket[i]);
-  }
-  loramesh.endPacket(); //retorno= 1:sucesso | 0: falha
-
-#endif   
-
-}
-
-void RouterTask(void * parameter) {
+void AppTask(void * parameter) {
 
     bool ret=0;
     uint8_t framesize=0;
 
     for(;;){
-        if (millis() - lastSendTime > INTERVAL){
+
+        switch (nextstate) {
+            case ST_TXBEACON:
+              if (loramesh.mydd.devtype == DEV_TYPE_ROUTER) {
+                send_pct = 1;
+                nextstate = ST_RXWAIT; 
+              }
+            case ST_RXWAIT:
+              if (loramesh.receivePacket()){
+                if (loramesh.mydd.devtype == DEV_TYPE_ROUTER){
+                    //o router nao faz nada com o dado
+                    //somente calcula indices de desempenho
+                    //log_i("Pacote eh para mim e eu sou Router!!!!");
+
+                    //proximo estado eh enviar o beacon novamente
+                    nextstate = ST_STANDBY;
+                }
+                else{
+                    //o end device deve tratar o pacote e retransmitir se for beacon
+                    //sincronizar o relogio atual
+                    //log_i("RX PCT SEND RESP seqnum = %d",lastpkt.seqnum );
+                    //send_pct = 1;
+                    nextstate = ST_STANDBY; 
+                }
+              }
+              break;
+            case ST_TXDATA: 
+               if ((loramesh.mydd.devtype == DEV_TYPE_ENDDEV) && (actualslot == DATA_SLOT)){
+                   //aqui eh minha janela de dados...devo enviar o pacote de dados...
+                    //log_i("Aqui eh hora de enviar os dados!!!!");
+                    nextstate = ST_RXWAIT; 
+               }    
+            default:
+              break;
+        } 
+
+        //controle de slots
+        if ((millis() - lastSendTime) > SLOT_INTERVAL){
             lastSendTime = millis();
-            wait_res = 0;
-            send_req = 1;
+            actualslot++;
+
+            if (actualslot > MAX_SLOTS){
+               actualslot=0;
+               nextstate = ST_TXBEACON;
+            }
+            //log_i("ActualSlot=%d",actualslot);
         }
 
-        if (wait_res){
-            ret = receivePacket();
-        }
-
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-
-
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     } 
 }
 
-uint8_t sendResp = 0;
 
-void EndDevTask(void * parameter) {
-
-    uint8_t framesize=0;
-    uint16_t data1=0x1234;
-    for( ;; )
-    {
-        if  (receivePacket()) 
-            sendResp = 1;
-        else
-            sendResp = 0;
-
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+//calcula a quantidade de polls e erros
+void setindpolls(){
+    uint16_t lastseqnum = loramesh.getLastSeqNum();
+    if (lastseqnum == loramesh.lastpkt.seqnum){
+        idx_response++;
     }
+    log_i("Polls=%d Resp=%d",lastseqnum, idx_response);
+
 }
 
 
@@ -309,7 +109,7 @@ void standby() {
     //loramesh.clearDioActions();
 
     //Suspend all tasks
-    vTaskSuspend(Router_TaskHandle);
+    vTaskSuspend(App_TaskHandle);
     //vTaskSuspend(EndDev_TaskHandle);
 
     //Set previous priority
@@ -325,68 +125,143 @@ void start() {
     vTaskPrioritySet(NULL, configMAX_PRIORITIES - 1);
 
     // Resume all tasks
-    vTaskResume(Router_TaskHandle);
+    vTaskResume(App_TaskHandle);
     //vTaskResume(EndDev_TaskHandle);
 
     // Start Receiving
-#if ROUTER == 0    
     loramesh.startReceiving();
-#endif
+
     // Set previous priority
     vTaskPrioritySet(NULL, prevPriority);
 }
 
+
 void setup()
 {
-    Serial.begin(9600);
+    uint8_t ret=0;
 
-    state = ST_RXWAIT;
+    Serial.begin(9600);
 
     Heltec.begin();
 
     loramesh.begin();
 
-
-#if ROUTER
-   xTaskCreatePinnedToCore( RouterTask,"Router_TaskHandle",1024, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
-    wait_res = 0;
-    send_req = 1;
-#else
+   // xTaskCreatePinnedToCore( AppTask,"App_TaskHandle",1024, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
+#if 0
     xTaskCreatePinnedToCore( EndDevTask,"EndDev_TaskHandle",1024, NULL, 2, NULL, ARDUINO_RUNNING_CORE);
 #endif
-
    // start();
+
+    //device function could be ROUTER (=1) or END DEVICE = 2
+    if (loramesh.mydd.devtype == DEV_TYPE_ROUTER){
+        actualslot = 0;
+        nextstate = ST_TXBEACON;
+    }
+    else{
+        loramesh.startReceiving();
+        nextstate = ST_RXWAIT;
+    }
+
+
+  //print mydd
+#if DISPLAY_ENABLE  
+    {
+        char buf[20];
+
+        Heltec.DisplayClear();
+
+        sprintf(buf,"SN=%x ",loramesh.mydd.devserialnumber);
+        Heltec.DisplayShow1(buf);
+        
+        if (loramesh.mydd.devtype == DEV_TYPE_ROUTER)
+            sprintf(buf,"DevType = RT ");
+        else
+            sprintf(buf,"DevType = ED ");
+        Heltec.DisplayShow2(buf);
+
+        sprintf(buf,"Addr=%x ", loramesh.mydd.devaddr);
+        Heltec.DisplayShow3(buf);
+    }
+#endif
 
 }
 
 void loop() {
-bool ret=0;
-int packetSize = 0;
-uint8_t address;
-uint8_t framesize;
-int len = 0;
 
-#if 1 //ROUTER
+    uint8_t framesize;
+    uint8_t rtaddr=0;
+    int len = 0;
+    bool ret=0;
 
-    if (send_req){
-        //Marcamos o tempo que ocorreu o último envio
-        wait_res = 1;
-        send_req = 0;
-        //Envia o pacote para informar ao Slave que queremos receber os dados
-        framesize = sendPacketReq(lastSendTime);
-        log_i("SendPacket len=%d src=%d dst=%d invid=%d time=%d",framesize,srcaddress,dstaddress,invokeid, lastSendTime);
-    }
-
-#else
-
-    if (sendResp == 1){
-        delay(10);
-        framesize = sendPacketRes(srcaddress,data1);
-        sendResp = 0;
-    }
+    switch (nextstate) {
+        case ST_TXBEACON:
+            if (loramesh.mydd.devtype == DEV_TYPE_ROUTER) {
+            send_pct = 1;
+            nextstate = ST_RXWAIT; 
+            }
+            break;
+        case ST_RXWAIT:
+          if (messageReceived) {
+                messageReceived = false;
               
-   
- #endif
+                ret = loramesh.receivePacket();
+                if (ret) {
+                    if (loramesh.mydd.devtype == DEV_TYPE_ROUTER){
+                        //o router nao faz nada com o dado
+                        //somente calcula indices de desempenho
+                        setindpolls();
+
+                        //proximo estado eh enviar o beacon novamente
+                        nextstate = ST_STANDBY;
+                    }
+                    else {
+                        //o end device deve tratar o pacote e retransmitir se for beacon
+                        //sincronizar o relogio atual
+                        log_i("RX PCT RECEIVED. SeqNum = %d",loramesh.lastpkt.seqnum );
+                        send_pct = 1;
+                        nextstate = ST_RXWAIT; 
+                    }
+                }
+            }
+            break;
+        case ST_TXDATA: 
+            if ((loramesh.mydd.devtype == DEV_TYPE_ENDDEV) && (actualslot == DATA_SLOT)){
+                //aqui eh minha janela de dados...devo enviar o pacote de dados...
+                //log_i("Aqui eh hora de enviar os dados!!!!");
+                nextstate = ST_RXWAIT; 
+            }    
+        default:
+            break;
+    } 
+
+    //controle de slots
+    if ((millis() - lastSendTime) > SLOT_INTERVAL){
+        lastSendTime = millis();
+        actualslot++;
+
+        if (actualslot >= MAX_SLOTS){
+            actualslot=0;
+            if (loramesh.mydd.devtype == DEV_TYPE_ROUTER) 
+                nextstate = ST_TXBEACON;
+            else
+                nextstate = ST_RXWAIT;
+        }
+        //log_i("ActualSlot=%d",actualslot);
+    }
+
+    if (send_pct){
+        //Marcamos o tempo que ocorreu o último envio
+        send_pct = 0;
+        //Envia o pacote para informar ao Slave que queremos receber os dados
+        if (loramesh.mydd.devtype == DEV_TYPE_ROUTER){
+            framesize = loramesh.sendPacketReq(lastSendTime);
+        }
+        else{
+            rtaddr = loramesh.getrouteaddr();
+            framesize = loramesh.sendPacketRes(rtaddr,lastSendTime);
+        }
+    }
+
     delay(10);
 
 }

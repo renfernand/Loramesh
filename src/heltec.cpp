@@ -62,66 +62,61 @@ void Heltec_ESP32::begin() {
 	pinMode(LED,OUTPUT);
 #endif
 
-#if ROUTER		
-#if DISPLAY_ENABLE
-		display->drawString(0, 20, "Device is a router!!!!");
-	#endif
-		log_i("Device is a router!!!!");
-#else		
-    #if DISPLAY_ENABLE
-		display->drawString(0, 20, "Device is a end device!!!!");
-	#endif
-		log_i("Device is a end device!!!!");
-#endif
     #if DISPLAY_ENABLE
 		display->display();
 		delay(300);
-#endif
+	#endif
 
 }
 
 
-void Heltec_ESP32::DisplayShow(char *pframe) 
+void Heltec_ESP32::DisplayClear() 
+{
+	Heltec.display->clear();
+	Heltec.display->setFont(ArialMT_Plain_16);
+}
+
+
+void Heltec_ESP32::DisplayShow1(char *pframe) 
 {
 	char buf[20];
 	uint32_t rssi=0;
 
-#if DISPLAY_ENABLE
+	memset(buf,0x20,sizeof(buf));
 
-	Heltec.display->clear();
-	Heltec.display->setFont(ArialMT_Plain_10);
-
-	#if ROUTER == 1
-		sprintf(buf,"RT - FREQ=%3d SF=%d ",freq,sf);
-		//log_i("buf=%s",buf);
-		Heltec.display->drawString(0, 0, buf);
-		memset(buf,0x20,sizeof(buf));
-		sprintf(buf, "%s", pframe);  
-		Heltec.display->drawString(0, 20, buf);
-		memset(buf,0x20,sizeof(buf));
-		//Heltec.display->drawString(0, 40, buf);
-		Heltec.display->display();
-	#else
-
-		sprintf(buf,"ED - FREQ=%3s SF=%1s ",String(freq),String(sf));
-		Heltec.display->drawString(0, 0, buf);
-		memset(buf,0x20,sizeof(buf));
-		//sprintf(buf, "RX [%d] = %s", value,pframe);  
-		sprintf(buf, "%s", pframe);  
-		Heltec.display->drawString(0, 20, buf);
-		memset(buf,0x20,sizeof(buf));
-
-		rssi = getRssi();
-		sprintf(buf, "RSSI = %d", rssi);  
-		Heltec.display->drawString(0, 40, buf);
-		Heltec.display->display();
-		memset(buf,0x20,sizeof(buf));
-
-	#endif
-
-
-#endif
+	sprintf(buf, "%s", pframe);  
+	Heltec.display->drawString(0, 0, buf);
+	//Heltec.display->display();
 }
 
+void Heltec_ESP32::DisplayShow2(char *pframe) 
+{
+	char buf[20];
+	uint32_t rssi=0;
+
+	//Heltec.display->clear();
+	//Heltec.display->setFont(ArialMT_Plain_16);
+
+	memset(buf,0x20,sizeof(buf));
+	sprintf(buf, "%s", pframe);  
+	Heltec.display->drawString(0, 20, buf);
+	Heltec.display->display();
+	
+}
+
+void Heltec_ESP32::DisplayShow3(char *pframe) 
+{
+	char buf[20];
+	uint32_t rssi=0;
+
+	//Heltec.display->clear();
+	//Heltec.display->setFont(ArialMT_Plain_10);
+
+	memset(buf,0x20,sizeof(buf));
+	sprintf(buf, "%s", pframe);  
+	Heltec.display->drawString(0, 40, buf);
+	Heltec.display->display();
+
+}
 
 Heltec_ESP32 Heltec;

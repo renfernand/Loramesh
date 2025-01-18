@@ -40,32 +40,31 @@ void Heltec_ESP32::begin() {
    Para o OLED permanecer ligado, o GPIO36 deve permanecer HIGH e deve estar neste estado quando chamar display Init.
    NAO INVERTER esta ORDEM.
 */
-      pinMode(36,OUTPUT);
-	  digitalWrite(36,LOW);
-	  delay(50);
-	  digitalWrite(36,HIGH);
+	pinMode(36,OUTPUT);
+	digitalWrite(36,LOW);
+	delay(50);
+	digitalWrite(36,HIGH);
 #endif
 
 #if defined( WIFI_Kit_32 ) || defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) || defined( WIFI_LoRa_32_V3 ) 
-		display->init();
-		display->flipScreenVertically();
-		display->setFont(ArialMT_Plain_10);
-		display->drawString(0, 0, "OLED initial done!");
-		display->display();
-
-		log_i("you can see OLED printed OLED initial done!\r\n");
+	display->init();
+	display->flipScreenVertically();
+	display->setFont(ArialMT_Plain_10);
+	display->drawString(0, 0, "OLED initial done!");
+	display->display();
+	log_i("OLED initial done!\r\n");
 #endif
 	}
 #endif
 
 #if defined( WIFI_Kit_32 ) || defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) 	
-	pinMode(LED,OUTPUT);
+	pinMode(LED_BUILTIN,OUTPUT);
 #endif
 
-    #if DISPLAY_ENABLE
-		display->display();
-		delay(300);
-	#endif
+#if DISPLAY_ENABLE
+	display->display();
+	delay(300);
+#endif
 
 }
 

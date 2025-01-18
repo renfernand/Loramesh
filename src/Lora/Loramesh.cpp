@@ -20,8 +20,6 @@ LoRaClass loramesh;
 
 uint16_t invokeid=0;
 
-volatile bool messageReceived = false;
-
 // flag to indicate that a preamble was detected
 volatile bool detectedFlag = false;
 // flag to indicate that a preamble was not detected
@@ -29,7 +27,7 @@ volatile bool timeoutFlag = false;
 
 volatile bool rxFlag = false;
 //char Readback[50];
-//char frame[50];
+char frame[50];
 bool newvalue=0;
 int packetSize = 0;
 
@@ -43,12 +41,23 @@ bool transmitFlag = false;
 volatile bool operationDone = false;
 
 //table of node devices...
-//{DeviceID, DEV_TYPE, DeviceAddress}
+//{DeviceID, DEV_TYPE, DeviceAddress, dataslot}
+// V2
+// V3
+// 0x707D
+// 0xDC78
+// 0x1C65
+#if defined ( WIFI_LoRa_32_V2 )
 strDevicedescription devid[]={
-   {0x907F,DEV_TYPE_ROUTER,1},
-   {0x5006,DEV_TYPE_ENDDEV,2}
+   {0x907F,DEV_TYPE_ROUTER,1,0},
+   {0x5006,DEV_TYPE_ENDDEV,2,2}
 };
-
+#else  //WIFI_LoRa_32_V3
+strDevicedescription devid[]={
+   {0x1C65,DEV_TYPE_ROUTER,1,0},
+   {0x707D,DEV_TYPE_ENDDEV,2,2}
+};
+#endif
 
 // ===========================
 LoRaClass::LoRaClass() :
@@ -101,51 +110,70 @@ void setFlagDetected(void) {
 }
 
 // ISR for handling LoRa reception interrupt
+volatile bool messageReceived = false;
+
 void onReceiveInterrupt() {
   messageReceived = true;
 }
 
-int LoRaClass::begin() {
+int LoRaClass::begin() 
+{
   float freq = LORA_FREQUENCY; 
   float bw = LORA_BW; 
   uint8_t sf = LORA_SF; 
   uint8_t cr = LORA_CR; 
-  uint8_t syncWord = RADIOLIB_SX127X_SYNC_WORD; 
   int8_t power = LORA_POWER; 
   uint16_t preambleLength = 8; 
   uint8_t gain = 0;
   uint8_t ret=0;
+  uint8_t syncWord=0;
 
   #if defined( WIFI_LoRa_32_V3 ) 
-      SPI.begin(SCK,MISO,MOSI,SS);
-      /*int16_t begin(float freq = 434.0, float bw = 125.0, uint8_t sf = 9, uint8_t cr = 7, 
-                      uint8_t syncWord = RADIOLIB_SX126X_SYNC_WORD_PRIVATE, int8_t power = 10, 
-                      uint16_t preambleLength = 8, float tcxoVoltage = 1.6, bool useRegulatorLDO = false);
-        */ 
-      int state = radio.begin(LORA_FREQUENCY_V3,LORA_BW_V3,LORA_SF,LORA_CR,RADIOLIB_SX126X_SYNC_WORD_PRIVATE, 
-                                LORA_POWER, 8, 1.6, false);
+    syncWord = RADIOLIB_SX126X_SYNC_WORD_PRIVATE; 
 
-      if (state == RADIOLIB_ERR_NONE)
-        Serial.println("Success!!!!");
-      else {
-        Serial.print("failed, code =");
-        Serial.println(state);
-        while(true);
-      } 
+    SPI.begin(SCK,MISO,MOSI,SS);
 
-      radio.setFrequency(frequency);
-      //radio.setDataRate(LORA_DATARATE);
-      radio.setBandwidth(LORA_BW_V3);
-      radio.setSpreadingFactor(LORA_SF);
-      radio.setOutputPower(TRANSMIT_POWER);
+    int state = radio.begin(freq,bw,sf,cr,syncWord,power, preambleLength, 1.6, gain);
 
+  if (state == RADIOLIB_ERR_NONE) {
+    log_i("Radio begin success! Freq=%4.2f Bw=%4.2f sf=%d cr=%d power=%d",freq, bw, sf, cr, power);
+    
+  } else {
+    log_v("failed, code =%d",state);
+    while (true) { delay(10); }
+  }
+
+    radio.setFrequency(freq);
+    //radio.setDataRate(LORA_DATARATE);
+    radio.setBandwidth(bw);
+    radio.setSpreadingFactor(sf);
+    radio.setOutputPower(power);
+
+  //get the device type and device address based in the chip id
+  ret = getdevicedescription(); 
+  
   #if ENABLE_RX_INTERRUPT
-      // Set the callback function for received packets
-      radio.setDio1Action(rx);
-      radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);      
+  // Set the callback function for received packets
+  radio.setDio1Action(onReceiveInterrupt);
+  
+  // este eh o continuos mode
+  //state = radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);   
+  // este eh o single mode
+  state = radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_NONE);   
   #endif
+  
+  if (state == RADIOLIB_ERR_NONE) {
+    log_i("Starting receiving!");
+  } 
+  else {
+    log_e("Radio starting failed, code %d",state);
+    while (true) { delay(100); }
+  }
+
+
 
 #else //( WIFI_LoRa_32_V2 ) 
+  syncWord = RADIOLIB_SX127X_SYNC_WORD; 
 
   VextON();
 
@@ -154,23 +182,17 @@ int LoRaClass::begin() {
 
   int state = radio.begin(freq,bw,sf,cr,syncWord, power, preambleLength, gain);
   if (state == RADIOLIB_ERR_NONE) {
-    log_i("Radio begin success!");
+    log_i("Radio begin success! Freq=%4.2f Bw=%4.2f sf=%d cr=%d power=%d",freq, bw, sf, cr, power);
     
   } else {
     log_v("failed, code =%d",state);
     while (true) { delay(10); }
   }
-  // set the function that will be called
-  // when LoRa preamble is not detected within CAD timeout period
-  //radio.setDio0Action(setFlagTimeout, RISING);
-
-  // set the function that will be called
-  // when LoRa preamble is detected
-  //radio.setDio1Action(setFlagDetected, RISING);
 
   // Attach the interrupt to DIO0 pin
   pinMode(DIO0, INPUT);
   attachInterrupt(digitalPinToInterrupt(DIO0), onReceiveInterrupt, RISING);
+
   
   //get the device type and device address based in the chip id
   ret = getdevicedescription();
@@ -189,8 +211,8 @@ int LoRaClass::begin() {
     }
 
   } 
-
 #endif
+
   return 1;
 }
 
@@ -220,15 +242,22 @@ void LoRaClass::onReceive(void) {
 
 //TODO: Retry start receiving if it fails
 void LoRaClass::clearDioActions () {
+  #if defined( WIFI_LoRa_32_V2 )   
     radio.clearDio0Action();
+  #else  
     radio.clearDio1Action();
+
+  #endif  
 }
 
 void LoRaClass::setDioActionsForReceivePacket() {
-    clearDioActions();
+  clearDioActions();
 
   #if defined( WIFI_LoRa_32_V2 ) 
     radio.setDio0Action(onReceiveInterrupt, RISING);
+  #else
+    radio.setDio1Action(onReceiveInterrupt);
+    radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);    
   #endif
 
 }
@@ -251,6 +280,7 @@ int LoRaClass::startReceiving() {
     return res;
 }
 
+#if defined( WIFI_LoRa_32_V2 )  
 int LoRaClass::beginPacket(int implicitHeader)
 {
   // put in standby mode
@@ -261,8 +291,8 @@ int LoRaClass::beginPacket(int implicitHeader)
     explicitHeaderMode();
   }
   // reset FIFO address and paload length
-  writeRegister(REG_FIFO_ADDR_PTR, 0);
-  writeRegister(REG_PAYLOAD_LENGTH, 0);
+  writeRegister(RADIOLIB_SX127X_REG_FIFO_ADDR_PTR, 0);
+  writeRegister(RADIOLIB_SX127X_REG_PAYLOAD_LENGTH, 0);
   
   return 1;
 }
@@ -270,7 +300,7 @@ int LoRaClass::beginPacket(int implicitHeader)
 int LoRaClass::endPacket(bool async)
 {
   // put in TX mode
-  writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_TX);
+  writeRegister(RADIOLIB_SX127X_REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_TX);
   if (async) {
     // grace time is required for the radio
     delayMicroseconds(150);
@@ -278,19 +308,19 @@ int LoRaClass::endPacket(bool async)
     // wait for TX done
     //V3 -  
 #if defined( WIFI_LoRa_32_V3 )    
-    while ((readRegister(REG_IRQ_FLAGS) & RADIOLIB_SX126X_IRQ_TX_DONE) == 0) {
+    while ((readRegister(RADIOLIB_SX127X_REG_IRQ_FLAGS) & RADIOLIB_SX126X_IRQ_TX_DONE) == 0) {
       log_i("write3");
       yield();
     }
     // clear IRQ's
     log_i("write4");
-    writeRegister(REG_IRQ_FLAGS, RADIOLIB_SX126X_IRQ_TX_DONE);
+    writeRegister(RADIOLIB_SX127X_REG_IRQ_FLAGS, RADIOLIB_SX126X_IRQ_TX_DONE);
 #else
-    while ((readRegister(REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK) == 0) {
+    while ((readRegister(RADIOLIB_SX127X_REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK) == 0) {
       yield();
     }
     // clear IRQ's
-    writeRegister(REG_IRQ_FLAGS, IRQ_TX_DONE_MASK);
+    writeRegister(RADIOLIB_SX127X_REG_IRQ_FLAGS, IRQ_TX_DONE_MASK);
 #endif
 
   }
@@ -298,67 +328,63 @@ int LoRaClass::endPacket(bool async)
   return 1;
 }
 
+#endif
+
+
+
+
 int LoRaClass::parsePacket(int size)
 {
+  char *pframe=&frame[0];
+  bool rxCRCOn=0;
   int packetLength = 0;
-  int irqFlags = readRegister(REG_IRQ_FLAGS);
 
-  if (size > 0) {
-    implicitHeaderMode();
-    writeRegister(REG_PAYLOAD_LENGTH, size & 0xff);
-  } else {
-    explicitHeaderMode();
-  }
+#if defined(WIFI_LoRa_32_V2)
+    int irqFlags = readRegister(RADIOLIB_SX127X_REG_IRQ_FLAGS);
 
-  // clear IRQ's
-  writeRegister(REG_IRQ_FLAGS, irqFlags);
-//RADIOLIB_SX126X_IRQ_RX_DONE
-#if defined(WIFI_LoRa_32_V3)
-  if ((irqFlags & RADIOLIB_SX126X_IRQ_RX_DONE) && (irqFlags & RADIOLIB_SX126X_IRQ_CRC_ERR) == 0) {
+    // when use CRC enable
+    // CrcOnPayload (bit 6 on RegHopChannel) 
+    // CRC Information extracted from the received packet header (Explicit header mode only)
+    // 0 Header indicates CRC off
+    // 1 Header indicates CRC on
+    int RegHopChannel = readRegister(RADIOLIB_SX127X_REG_HOP_CHANNEL);
 
-    // received a packet
-    _packetIndex = 0;
-    // read packet length
-    if (_implicitHeaderMode) {
-      packetLength = readRegister(REG_PAYLOAD_LENGTH);
-    } else {4
-      packetLength = readRegister(REG_RX_NB_BYTES);
-    }
-    // set FIFO address to current RX address
-    writeRegister(REG_FIFO_ADDR_PTR, readRegister(REG_FIFO_RX_CURRENT_ADDR));
-    // put in standby mode
-    idle();
-  }
-  else if (readRegister(REG_OPMODE) != (MODE_LONG_RANGE_MODE | MODE_RX_SINGLE)) {
-    // not currently in RX mode
-    // reset FIFO address
-    writeRegister(REG_FIFO_ADDR_PTR, 0);
-    // put in single RX mode
-    writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_RX_SINGLE);
-  }
-#else
-
-  if ((irqFlags & IRQ_RX_DONE_MASK) && (irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
-    // received a packet
-    _packetIndex = 0;
-    // read packet length
-    if (_implicitHeaderMode) {
-      packetLength = readRegister(REG_PAYLOAD_LENGTH);
+    if (size > 0) {
+      implicitHeaderMode();
+      writeRegister(RADIOLIB_SX127X_REG_PAYLOAD_LENGTH, size & 0xff);
     } else {
-      packetLength = readRegister(REG_RX_NB_BYTES);
+      explicitHeaderMode();
+
+  #if defined(WIFI_LoRa_32_V2)
+      if (RegHopChannel & CRC_ON_PAYLOAD)
+        rxCRCOn = 1;
+  #endif       
+    }
+
+    // clear IRQ's
+    writeRegister(RADIOLIB_SX127X_REG_IRQ_FLAGS, irqFlags);
+  
+   if ((irqFlags & IRQ_RX_DONE_MASK) && (rxCRCOn) && (irqFlags & IRQ_PAYLOAD_CRC_ERROR_MASK) == 0) {
+    // received a packet
+    _packetIndex = 0;
+    // read packet length
+    if (_implicitHeaderMode) {
+      packetLength = readRegister(RADIOLIB_SX127X_REG_PAYLOAD_LENGTH);
+    } else {
+      packetLength = readRegister(RADIOLIB_SX127X_REG_RX_NB_BYTES);
     }
     //log_i("irqflags1 =%2x packetsize=%d",irqFlags,packetLength);
     // set FIFO address to current RX address
-    writeRegister(REG_FIFO_ADDR_PTR, readRegister(REG_FIFO_RX_CURRENT_ADDR));
+    writeRegister(RADIOLIB_SX127X_REG_FIFO_ADDR_PTR, readRegister(RADIOLIB_SX127X_REG_FIFO_RX_CURRENT_ADDR));
     // put in standby mode
     idle();
   }
-  else if (readRegister(REG_OPMODE) != (MODE_LONG_RANGE_MODE | MODE_RX_SINGLE)) {
+  else if (readRegister(RADIOLIB_SX127X_REG_OP_MODE) != (MODE_LONG_RANGE_MODE | MODE_RX_SINGLE)) {
     // not currently in RX mode
     // reset FIFO address
-    writeRegister(REG_FIFO_ADDR_PTR, 0);
+    writeRegister(RADIOLIB_SX127X_REG_FIFO_ADDR_PTR, 0);
     // put in single RX mode
-    writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_RX_SINGLE);
+    writeRegister(RADIOLIB_SX127X_REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_RX_SINGLE);
   }
 
 #endif
@@ -477,8 +503,8 @@ uint8_t LoRaClass::getfunction(uint8_t *packet,uint8_t len){
 
 }
 
-uint16_t LoRaClass::gettimestamp(uint8_t *packet,uint8_t len){
-    uint8_t timestamp;
+uint32_t LoRaClass::gettimestamp(uint8_t *packet,uint8_t len){
+    uint32_t timestamp;
     uint8_t *pucaux = (uint8_t *) &timestamp;
 
     if (len > 5){
@@ -605,24 +631,31 @@ bool LoRaClass::receivePacket()
 {
     bool retcrc=0;
     int packetSize = 0;
+    uint8_t ret=0;
+    int len = 0;
 
+
+#if defined(WIFI_LoRa_32_V3)
+  uint8_t offset = 0;
+  int16_t state = 0;
+
+  // get packet length and Rx buffer offset
+  packetSize = radio.getPacketLength(true, &offset);
+  if (packetSize) {
+      state = radio.readData(lastpkt.rxpacket,packetSize); 
+      RADIOLIB_ASSERT(state);
+
+#else // V2
     packetSize = loramesh.parsePacket(0);
     if (packetSize) {
-        uint8_t ret=0;
-        int len = 0;
-        clearBuffer(lastpkt.rxpacket, BUFFER_SIZE);
-
         while (loramesh.available() && len < BUFFER_SIZE - 1) {
             lastpkt.rxpacket[len++] = (char)loramesh.read(); // Lê o pacote byte a byte
         }
-
-        lastpkt.rxpacket[len] = '\0'; // Termina string
+#endif
 
         // verifica o srcaddress e dstaddress do pacote
         ret = getaddress((uint8_t *)lastpkt.rxpacket,packetSize);
         
-        log_i("Rx [%d]=%2x %2x %2x %2x %2x",packetSize, lastpkt.rxpacket[0],lastpkt.rxpacket[1],lastpkt.rxpacket[2],lastpkt.rxpacket[3],lastpkt.rxpacket[4]);
-
         //verifica se o pacote recebido nao eh o mesmo que acabou de ser enviado
         if ((ret) && ((lastpkt.srcaddress != mydd.devaddr))) {
             lastpkt.fct       = getfunction((uint8_t *)lastpkt.rxpacket,packetSize);
@@ -630,7 +663,7 @@ bool LoRaClass::receivePacket()
             lastpkt.timestamp = gettimestamp((uint8_t *)lastpkt.rxpacket,packetSize);
             retcrc = checkcrc((uint8_t *)lastpkt.rxpacket,packetSize);
 
-            //log_i("Rx len=%d src=%d dest=%d fct=%d seqnum=%d crc=%d ",packetSize, lastpkt.srcaddress,lastpkt.dstaddress,lastpkt.fct, lastpkt.seqnum, retcrc);
+            //log_i("Rx len=%d seqnum=%d timestamp=%d retcrc=%d",packetSize, lastpkt.seqnum, lastpkt.timestamp,retcrc);
 
             if ((retcrc == 1) && ((lastpkt.dstaddress == mydd.devaddr) || (lastpkt.dstaddress == BROADCAST_ADDR))) {
                 return 1;
@@ -640,18 +673,17 @@ bool LoRaClass::receivePacket()
         }
         else
            return 0;
+
     }
     else
         return 0;
-
 }
-
 
 int LoRaClass::packetRssi()
 {
 	int8_t snr=0;
     int8_t SnrValue = readRegister( 0x19 );
-    int16_t rssi = readRegister(REG_PKT_RSSI_VALUE);
+    int16_t rssi = readRegister(RADIOLIB_SX127X_REG_PKT_RSSI_VALUE);
 
 	if( SnrValue & 0x80 ) // The SNR sign bit is 1
 	{
@@ -678,7 +710,7 @@ int LoRaClass::packetRssi()
 
 float LoRaClass::packetSnr()
 {
-  return (((int8_t)readRegister(REG_PKT_SNR_VALUE) +2) >> 2);
+  return (((int8_t)readRegister(RADIOLIB_SX127X_REG_RSSI_VALUE) +2) >> 2);
 }
 
 size_t LoRaClass::write(uint8_t byte)
@@ -688,33 +720,37 @@ size_t LoRaClass::write(uint8_t byte)
 
 size_t LoRaClass::write(const uint8_t *buffer, size_t size)
 {
-  int currentLength = readRegister(REG_PAYLOAD_LENGTH);
+  int currentLength = readRegister(RADIOLIB_SX127X_REG_PAYLOAD_LENGTH);
   // check size
   if ((currentLength + size) > MAX_PKT_LENGTH) {
     size = MAX_PKT_LENGTH - currentLength;
   }
   // write data
   for (size_t i = 0; i < size; i++) {
-    writeRegister(REG_FIFO, buffer[i]);
+    writeRegister(RADIOLIB_SX127X_REG_FIFO, buffer[i]);
   }
   // update length
-  writeRegister(REG_PAYLOAD_LENGTH, currentLength + size);
+  writeRegister(RADIOLIB_SX127X_REG_PAYLOAD_LENGTH, currentLength + size);
   return size;
 }
 
 int LoRaClass::available()
 {
-  return (readRegister(REG_RX_NB_BYTES) - _packetIndex);
+  return (readRegister(RADIOLIB_SX127X_REG_RX_NB_BYTES) - _packetIndex);
 }
 
 int LoRaClass::read()
 {
-  if (!available()) {
-  	return -1; 
-	}
-  _packetIndex++;
-  return readRegister(REG_FIFO);
-}
+  #if defined ( WIFI_LoRa_32_V2 )  
+    if (!available()) {
+      return -1; 
+    }
+    _packetIndex++;
+    return readRegister(RADIOLIB_SX127X_REG_FIFO);
+  #else
+     return 0;
+  #endif  
+  }
 
 int LoRaClass::peek()
 {
@@ -722,11 +758,11 @@ int LoRaClass::peek()
   	return -1; 
 	}
   // store current FIFO address
-  int currentAddress = readRegister(REG_FIFO_ADDR_PTR);
+  int currentAddress = readRegister(RADIOLIB_SX127X_REG_FIFO_ADDR_PTR);
   // read
-  uint8_t b = readRegister(REG_FIFO);
+  uint8_t b = readRegister(RADIOLIB_SX127X_REG_FIFO);
   // restore FIFO address
-  writeRegister(REG_FIFO_ADDR_PTR, currentAddress);
+  writeRegister(RADIOLIB_SX127X_REG_FIFO_ADDR_PTR, currentAddress);
   return b;
 }
 
@@ -739,7 +775,7 @@ void LoRaClass::onReceive(void(*callback)(int))
   _onReceive = callback;
 
   if (callback) {
-    writeRegister(REG_DIOMAPPING1, 0x00);
+    writeRegister(RADIOLIB_SX127X_REG_DIO_MAPPING_1, 0x00);
     attachInterrupt(digitalPinToInterrupt(_dio0), LoRaClass::onDio0Rise, RISING);
 //    attachInterrupt(digitalPinToInterrupt(_dio0), LoRaClass::onDio0Rise, RISING);
   } else {
@@ -751,22 +787,22 @@ void LoRaClass::receive(int size)
 {
   if (size > 0) {
     implicitHeaderMode();
-    writeRegister(REG_PAYLOAD_LENGTH, size & 0xff);
+    writeRegister(RADIOLIB_SX127X_REG_PAYLOAD_LENGTH, size & 0xff);
   } else {
     explicitHeaderMode();
   }
 
-  writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_RX_CONTINUOUS);
+  writeRegister(RADIOLIB_SX127X_REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_RX_CONTINUOUS);
 }
 
 void LoRaClass::idle()
 {
-  writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_STDBY);
+  writeRegister(RADIOLIB_SX127X_REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_STDBY);
 }
 
 void LoRaClass::sleep()
 {
-  writeRegister(REG_OPMODE, MODE_LONG_RANGE_MODE | MODE_SLEEP);
+  writeRegister(RADIOLIB_SX127X_REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_SLEEP);
 }
 
 void LoRaClass::setTxPower(int8_t power, int8_t outputPin)
@@ -774,7 +810,7 @@ void LoRaClass::setTxPower(int8_t power, int8_t outputPin)
 	  uint8_t paConfig = 0;
 	  uint8_t paDac = 0;
 
-	  paConfig = readRegister( REG_PACONFIG );
+	  paConfig = readRegister( RADIOLIB_SX127X_REG_PA_CONFIG );
 	  paDac = readRegister( REG_PADAC );
 
 	  paConfig = ( paConfig & RF_PACONFIG_PASELECT_MASK ) | outputPin;
@@ -828,7 +864,7 @@ void LoRaClass::setTxPower(int8_t power, int8_t outputPin)
 
 	    paConfig = ( paConfig & RF_PACONFIG_OUTPUTPOWER_MASK ) | ( uint8_t )( ( uint16_t )( power + 1 ) & 0x0F );
 	  }
-	  writeRegister( REG_PACONFIG, paConfig );
+	  writeRegister( RADIOLIB_SX127X_REG_PA_CONFIG, paConfig );
 	  writeRegister( REG_PADAC, paDac );
 }
 
@@ -842,7 +878,7 @@ void LoRaClass::setTxPowerMax(int level)
 	}
 	writeRegister(REG_OCP,0x3f);
 	writeRegister(REG_PADAC,0x87);//Open PA_BOOST
-	writeRegister(REG_PACONFIG, RF_PACONFIG_PASELECT_PABOOST | (level - 5));
+	writeRegister(RADIOLIB_SX127X_REG_PA_CONFIG, RF_PACONFIG_PASELECT_PABOOST | (level - 5));
 }
 
 void LoRaClass::setFrequency(long frequency)
@@ -850,9 +886,9 @@ void LoRaClass::setFrequency(long frequency)
   _frequency = frequency;
 
   uint64_t frf = ((uint64_t)frequency << 19) / 32000000;
-  writeRegister(REG_FRFMSB, (uint8_t)(frf >> 16));
-  writeRegister(REG_FRFMID, (uint8_t)(frf >> 8));
-  writeRegister(REG_FRFLSB, (uint8_t)(frf >> 0));
+  writeRegister(RADIOLIB_SX127X_REG_FRF_MSB, (uint8_t)(frf >> 16));
+  writeRegister(RADIOLIB_SX127X_REG_FRF_MID, (uint8_t)(frf >> 8));
+  writeRegister(RADIOLIB_SX127X_REG_FRF_LSB, (uint8_t)(frf >> 0));
 }
 
 void LoRaClass::setSpreadingFactor(int sf)
@@ -864,14 +900,14 @@ void LoRaClass::setSpreadingFactor(int sf)
   	sf = 12; 
   	}
   if (sf == 6) {
-    writeRegister(REG_DETECTION_OPTIMIZE, 0xc5);
-    writeRegister(REG_DETECTION_THRESHOLD, 0x0c);
+    writeRegister(RADIOLIB_SX127X_REG_DETECT_OPTIMIZE, 0xc5);
+    writeRegister(RADIOLIB_SX127X_REG_DETECTION_THRESHOLD, 0x0c);
   } else {
-    writeRegister(REG_DETECTION_OPTIMIZE, 0xc3);
-    writeRegister(REG_DETECTION_THRESHOLD, 0x0a);
+    writeRegister(RADIOLIB_SX127X_REG_DETECT_OPTIMIZE, 0xc3);
+    writeRegister(RADIOLIB_SX127X_REG_DETECTION_THRESHOLD, 0x0a);
   }
 
-  writeRegister(REG_MODEM_CONFIG_2, (readRegister(REG_MODEM_CONFIG_2) & 0x0f) | ((sf << 4) & 0xf0));
+  writeRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_2, (readRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_2) & 0x0f) | ((sf << 4) & 0xf0));
 
 }
 
@@ -890,7 +926,7 @@ void LoRaClass::setSignalBandwidth(long sbw)
   else if (sbw <= 250E3) { bw = 8; }
   else /*if (sbw <= 250E3)*/ { bw = 9; }
 
-  writeRegister(REG_MODEM_CONFIG_1,(readRegister(REG_MODEM_CONFIG_1) & 0x0f) | (bw << 4));
+  writeRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_1,(readRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_1) & 0x0f) | (bw << 4));
 }
 
 void LoRaClass::setCodingRate4(int denominator)
@@ -902,57 +938,62 @@ void LoRaClass::setCodingRate4(int denominator)
   }
   int cr = denominator - 4;
 
-  writeRegister(REG_MODEM_CONFIG_1, (readRegister(REG_MODEM_CONFIG_1) & 0xf1) | (cr << 1));
+  writeRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_1, (readRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_1) & 0xf1) | (cr << 1));
 }
 
 void LoRaClass::setPreambleLength(long length)
 {
-  writeRegister(REG_PREAMBLE_MSB, (uint8_t)(length >> 8));
-  writeRegister(REG_PREAMBLE_LSB, (uint8_t)(length >> 0));
+  writeRegister(RADIOLIB_SX127X_REG_PREAMBLE_MSB, (uint8_t)(length >> 8));
+  writeRegister(RADIOLIB_SX127X_REG_PREAMBLE_LSB, (uint8_t)(length >> 0));
 }
 
 void LoRaClass::setSyncWord(int sw)
 {
-  writeRegister(REG_SYNC_WORD, sw);
+  writeRegister(RADIOLIB_SX127X_REG_SYNC_WORD, sw);
 }
 
 void LoRaClass::enableCrc()
 {
-  writeRegister(REG_MODEM_CONFIG_2, readRegister(REG_MODEM_CONFIG_2) | 0x04);
+#if defined ( WIFI_LoRa_32_V2 ) 
+  writeRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_2, readRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_2) | 0x04);
+#else
+  writeRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_2, readRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_2) | 0x04);
+#endif
+
 }
 
 void LoRaClass::disableCrc()
 {
-  writeRegister(REG_MODEM_CONFIG_2, readRegister(REG_MODEM_CONFIG_2) & 0xfb);
+  writeRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_2, readRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_2) & 0xfb);
 }
 
 void LoRaClass::enableTxInvertIQ()
 {
-  writeRegister( REG_LR_INVERTIQ, ( ( readRegister( REG_LR_INVERTIQ ) & RFLR_INVERTIQ_TX_MASK & RFLR_INVERTIQ_RX_MASK ) | RFLR_INVERTIQ_RX_OFF | RFLR_INVERTIQ_TX_ON ) );
-  writeRegister( REG_LR_INVERTIQ2, RFLR_INVERTIQ2_ON );
+  writeRegister( RADIOLIB_SX127X_REG_INVERT_IQ, ( ( readRegister( RADIOLIB_SX127X_REG_INVERT_IQ ) & RFLR_INVERTIQ_TX_MASK & RFLR_INVERTIQ_RX_MASK ) | RFLR_INVERTIQ_RX_OFF | RFLR_INVERTIQ_TX_ON ) );
+  writeRegister( RADIOLIB_SX127X_REG_INVERT_IQ2, RFLR_INVERTIQ2_ON );
 }
 
 void LoRaClass::enableRxInvertIQ()
 {
-  writeRegister( REG_LR_INVERTIQ, ( ( readRegister( REG_LR_INVERTIQ ) & RFLR_INVERTIQ_TX_MASK & RFLR_INVERTIQ_RX_MASK ) | RFLR_INVERTIQ_RX_ON | RFLR_INVERTIQ_TX_OFF ) );
-  writeRegister( REG_LR_INVERTIQ2, RFLR_INVERTIQ2_ON );
+  writeRegister( RADIOLIB_SX127X_REG_INVERT_IQ, ( ( readRegister( RADIOLIB_SX127X_REG_INVERT_IQ ) & RFLR_INVERTIQ_TX_MASK & RFLR_INVERTIQ_RX_MASK ) | RFLR_INVERTIQ_RX_ON | RFLR_INVERTIQ_TX_OFF ) );
+  writeRegister( RADIOLIB_SX127X_REG_INVERT_IQ2, RFLR_INVERTIQ2_ON );
 }
 
 void LoRaClass::disableInvertIQ()
 {
-  writeRegister( REG_LR_INVERTIQ, ( ( readRegister( REG_LR_INVERTIQ ) & RFLR_INVERTIQ_TX_MASK & RFLR_INVERTIQ_RX_MASK ) | RFLR_INVERTIQ_RX_OFF | RFLR_INVERTIQ_TX_OFF ) );
-  writeRegister( REG_LR_INVERTIQ2, RFLR_INVERTIQ2_OFF );
+  writeRegister( RADIOLIB_SX127X_REG_INVERT_IQ, ( ( readRegister( RADIOLIB_SX127X_REG_INVERT_IQ ) & RFLR_INVERTIQ_TX_MASK & RFLR_INVERTIQ_RX_MASK ) | RFLR_INVERTIQ_RX_OFF | RFLR_INVERTIQ_TX_OFF ) );
+  writeRegister( RADIOLIB_SX127X_REG_INVERT_IQ2, RFLR_INVERTIQ2_OFF );
 }
 
 void LoRaClass::enableInvertIQ()
 {
-  writeRegister( REG_LR_INVERTIQ, ( ( readRegister( REG_LR_INVERTIQ ) & RFLR_INVERTIQ_TX_MASK & RFLR_INVERTIQ_RX_MASK ) | RFLR_INVERTIQ_RX_ON | RFLR_INVERTIQ_TX_ON ) );
-  writeRegister( REG_LR_INVERTIQ2, RFLR_INVERTIQ2_ON );
+  writeRegister( RADIOLIB_SX127X_REG_INVERT_IQ, ( ( readRegister( RADIOLIB_SX127X_REG_INVERT_IQ ) & RFLR_INVERTIQ_TX_MASK & RFLR_INVERTIQ_RX_MASK ) | RFLR_INVERTIQ_RX_ON | RFLR_INVERTIQ_TX_ON ) );
+  writeRegister( RADIOLIB_SX127X_REG_INVERT_IQ2, RFLR_INVERTIQ2_ON );
 }
 
 byte LoRaClass::random()
 {
-  return readRegister(REG_RSSI_WIDEBAND);
+  return readRegister(RADIOLIB_SX127X_REG_RSSI_WIDEBAND);
 }
 
 void LoRaClass::setPins(int ss, int reset, int dio0)
@@ -980,20 +1021,20 @@ void LoRaClass::dumpRegisters(Stream& out)
 void LoRaClass::explicitHeaderMode()
 {
   _implicitHeaderMode = 0;
-  writeRegister(REG_MODEM_CONFIG_1, readRegister(REG_MODEM_CONFIG_1) & 0xfe);
+  writeRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_1, readRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_1) & 0xfe);
 }
 
 void LoRaClass::implicitHeaderMode()
 {
   _implicitHeaderMode = 1;
-  writeRegister(REG_MODEM_CONFIG_1, readRegister(REG_MODEM_CONFIG_1) | 0x01);
+  writeRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_1, readRegister(RADIOLIB_SX127X_REG_MODEM_CONFIG_1) | 0x01);
 }
 
 void LoRaClass::handleDio0Rise()
 {
-  int irqFlags = readRegister(REG_IRQ_FLAGS);
+  int irqFlags = readRegister(RADIOLIB_SX127X_REG_IRQ_FLAGS);
   // clear IRQ's
-  writeRegister(REG_IRQ_FLAGS, irqFlags);
+  writeRegister(RADIOLIB_SX127X_REG_IRQ_FLAGS, irqFlags);
 #if defined(WIFI_LoRa_32_V3) 
   if ((irqFlags & RADIOLIB_SX126X_IRQ_CRC_ERR) == 0) {
 #else
@@ -1002,12 +1043,12 @@ void LoRaClass::handleDio0Rise()
     // received a packet
     _packetIndex = 0;
     // read packet length
-    int packetLength = _implicitHeaderMode ? readRegister(REG_PAYLOAD_LENGTH) : readRegister(REG_RX_NB_BYTES);
+    int packetLength = _implicitHeaderMode ? readRegister(RADIOLIB_SX127X_REG_PAYLOAD_LENGTH) : readRegister(RADIOLIB_SX127X_REG_RX_NB_BYTES);
     // set FIFO address to current RX address
-    writeRegister(REG_FIFO_ADDR_PTR, readRegister(REG_FIFO_RX_CURRENT_ADDR));
+    writeRegister(RADIOLIB_SX127X_REG_FIFO_ADDR_PTR, readRegister(RADIOLIB_SX127X_REG_FIFO_RX_CURRENT_ADDR));
     if (_onReceive) { _onReceive(packetLength); }
     // reset FIFO address
-    writeRegister(REG_FIFO_ADDR_PTR, 0);
+    writeRegister(RADIOLIB_SX127X_REG_FIFO_ADDR_PTR, 0);
   }
 }
 
@@ -1044,17 +1085,26 @@ bool LoRaClass::sendPacket(uint8_t* p,uint8_t len) {
     //waitBeforeSend(1);
 
 #if  defined ( WIFI_LoRa_32_V3 )
-  //int16_t SX126x::transmit(uint8_t* data, size_t len, uint8_t addr) {
-  int16_t ret = radio.transmit(data);
-  Serial.print("transmited ");
-  Serial.print(var1);
-  Serial.print(" ret=");
-  Serial.println(ret);
+
+  clearDioActions();
+  enableCrc();
+
+  int16_t transmissionState = radio.transmit(p,len,1);
+
+  //Start receiving again after sending a packet
+  startReceiving();
+
+  if (transmissionState == RADIOLIB_ERR_NONE) {
+  return true;
+} else {
+  log_e("transmission failed, code=%d ",transmissionState);
+  return false;
+}   
 
 #else  //WIFI_LoRa_32_V2
 
     clearDioActions();
-
+    enableCrc();
     //Blocking transmit, it is necessary due to deleting the packet after sending it. 
     int transmissionState = radio.transmit(p, len,1);
 
@@ -1132,32 +1182,37 @@ uint32_t getRssi(void) {
 }
 
 uint8_t LoRaClass::ReceiveFrame(char *pframe) {
+  uint8_t packetSize = 0;
 
  #if  defined ( WIFI_LoRa_32_V3 ) 
   String str;
 
 #if ENABLE_RX_INTERRUPT
   //radio.clearDio1Action();
-  packetSize = 0;
 
-  if (rxFlag) {
-    rxFlag = false;
+  if (messageReceived) {
+    messageReceived = false;
+    //log_i("msg received!!!");
+
+  #if 0  
   int state = radio.receive(str);
 
   if (state == RADIOLIB_ERR_NONE) {
     // Packet received successfully
     packetSize = str.length();
     strcpy(pframe,str.c_str());
-
-    log_i("Received packet [%d] rssi=%d",packetSize,getRssi());
+      log_i("Received packet [%d]",packetSize);
   }
-  //else {
-      // Some other error occurred (excluding timeout and CRC mismatch)
-  //  log_e("Failed to receive packet!!!! code=%d",state);
-  //}
+ #else
+ int state = radio.receive(str);
 
+ #endif
+
+    // Start Receiving
+    startReceiving();
     //radio.setDio1Action(rx);
-    radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);    
+    //radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);    
+
   }
 #else
   int state = radio.receive(str);

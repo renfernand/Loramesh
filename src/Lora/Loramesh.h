@@ -50,7 +50,7 @@ typedef struct {
     uint8_t fct;
     uint16_t seqnum=0;
     uint32_t timestamp;
-    uint16_t data1 = 0x3344;
+    uint8_t packetSize;
     uint8_t rxpacket[BUFFER_SIZE];
 } strPacket;
 
@@ -59,8 +59,27 @@ typedef struct  {
     uint16_t devserialnumber;
     uint8_t  devtype;
     uint8_t  devaddr;
+    uint8_t  dataslot;
 } strDevicedescription;
 
+
+typedef enum {
+   DEV_TYPE_ROUTER=1,
+   DEV_TYPE_ENDDEV
+} devicetype;
+typedef enum {
+   FCT_BEACON=1,
+   FCT_JOIN,
+   FCT_DATA
+} functioncode;
+
+typedef enum  {
+    ST_TXBEACON,
+    ST_RXWAIT,
+    ST_RXDONE,
+    ST_TXDATA,
+    ST_STANDBY
+}statemac;
 
 #if defined (__STM32F1__)
 inline unsigned char  digitalPinToInterrupt(unsigned char Interrupt_pin) { return Interrupt_pin; } //This isn't included in the stm32duino libs (yet)
@@ -106,7 +125,7 @@ public:
   uint8_t getrouteaddr(void);
   uint8_t checkcrc (uint8_t *packet, uint8_t len);
   uint8_t getaddress(uint8_t *packet,uint8_t len);
-  uint16_t gettimestamp(uint8_t *packet,uint8_t len);
+  uint32_t gettimestamp(uint8_t *packet,uint8_t len);
   uint8_t getfunction(uint8_t *packet,uint8_t len);
   uint16_t getseqnum(uint8_t *packet,uint8_t len);
   uint16_t getLastSeqNum(void);

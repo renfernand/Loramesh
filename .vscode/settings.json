@@ -19,6 +19,7 @@
         "algorithm": "cpp",
         "*.tcc": "cpp",
         "numeric": "cpp",
-        "cstddef": "cpp"
+        "cstddef": "cpp",
+        "sstream": "cpp"
     }
 }

@@ -1,17 +1,30 @@
 #ifndef _DEVCONFIG_H_
 #define _DEVCONFIG_H_
+
 //Suport Heltec V2 and V3 
 // heltec_wifi_lora_32_V2 -  radio chipset SX1276 OLED chip SSD1306)
 // heltec_wifi_lora_32_V3 -  radio chipset SX1262 OLED chip SSD1306)
 
-//define se o nó sensor será um ED (ROUTER=0) ou RT (ROUTER=1) 
-#define ROUTER 1
-
-
 //define se vai usar ou nao o Display Oled da placa 
 #define DISPLAY_ENABLE 1
 
-#define ENABLE_RX_INTERRUPT 0
+#define ENABLE_RX_INTERRUPT 1
+
+#define SYNC_INTERVAL_MS  1000   // Synchronization interval
+#define EXPECTED_PERIOD_MS 1000  // Desired period for ESP32 A
+#define ADJUSTMENT_FACTOR  0.1   // Proportional correction factor
+#define MIN_VAL 2000.0
+#define MAX_VAL 500.0
+
+#ifndef MIN
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#endif // min
+         
+#ifndef MAX
+#define MAX(a,b) ((a)>(b)?(a):(b))
+#endif // max
+
+
 // Packet types
 #define NEED_ACK_P 0b00000011
 #define DATA_P     0b00000010
@@ -23,28 +36,23 @@
 #define LOG_LOCAL_LEVEL CONFIG_LOG_MAXIMUM_LEVEL
  
 #define PABOOST 1
-#define RX_TIMEOUT_VALUE   1000
+//#define RX_TIMEOUT_VALUE   1000
 
-#define MINIMUM_DELAY 900 
+//#define MINIMUM_DELAY 900 
 
 #define MAX_ADDR 5
 #define BROADCAST_ADDR 0
 #define BYTE_CRC 0x66
-//#define SOURCE_ADDRESS 1
 
 #define MAX_PACKET_SIZE  30
-#define MAX_SLOTS 2
+
+#define MAX_SLOTS   2
 #define BEACON_SLOT 0 
-#define DATA_SLOT   2 
 
 //Intervalo entre os envios
-#define SLOT_INTERVAL 1000
+#define SLOT_INTERVAL 500
 
 #define BUFFER_SIZE           50 // Define the payload size here
-
-#ifndef LED_BUILTIN
-//#define LED_BUILTIN 13
-#endif
 
 /*  LoRa spreading factor. Defaults to 9.
    goes from 7 to 12 where SF7 is the shortest and SF12 the longest */
@@ -87,23 +95,6 @@
 /* cr */
 #define LORA_CR 5
 
-typedef enum {
-   DEV_TYPE_ROUTER=1,
-   DEV_TYPE_ENDDEV
-} devicetype;
-typedef enum {
-   FCT_BEACON=1,
-   FCT_JOIN,
-   FCT_DATA
-} functioncode;
-
-typedef enum  {
-    ST_TXBEACON,
-    ST_RXWAIT,
-    ST_RXDONE,
-    ST_TXDATA,
-    ST_STANDBY
-}statemac;
 
 
 #endif

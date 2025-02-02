@@ -42,7 +42,6 @@
 
 void LoraSendFrame(String data,size_t len);
 uint8_t LoraReceiveFrame(char *pframe);
-uint32_t getRssi(void);
 
 typedef struct {
     uint8_t srcaddress;
@@ -60,6 +59,7 @@ typedef struct  {
     uint8_t  devtype;
     uint8_t  devaddr;
     uint8_t  dataslot;
+    uint8_t  seqnum;
 } strDevicedescription;
 
 
@@ -103,8 +103,6 @@ public:
   LoRaClass();
 
   int16_t standby();
-
-
   int begin();
   void end();
   void initializeLoRa();
@@ -129,6 +127,7 @@ public:
   uint8_t getfunction(uint8_t *packet,uint8_t len);
   uint16_t getseqnum(uint8_t *packet,uint8_t len);
   uint16_t getLastSeqNum(void);
+  uint16_t getLastPctSeqNum(void);
 
   void clearBuffer(uint8_t *buffer, int size);
   bool getdevicedescription(void);
@@ -139,17 +138,16 @@ public:
   int endPacket(bool async = false);
 
   int parsePacket(int size = 0);
-  int packetRssi();
-  float packetSnr();
 
-  // from Print
+  uint32_t getRssi(void);
+  int packetRssi();
+
   virtual size_t write(uint8_t byte);
   virtual size_t write(const uint8_t *buffer, size_t size);
+  virtual int peek();
 
-  // from Stream
   virtual int available();
   virtual int read();
-  virtual int peek();
   virtual void flush();
 
   void onReceive(void(*callback)(int));
@@ -159,53 +157,22 @@ public:
   void idle();
   void sleep();
 
-  void setTxPower(int8_t power, int8_t outputPin);
-  void setTxPowerMax(int level);
-  void setFrequency(long frequency);
-  void setSpreadingFactor(int sf);
-  void setSignalBandwidth(long sbw);
-  void setCodingRate4(int denominator);
-  void setPreambleLength(long length);
-  void setSyncWord(int sw);
   void enableCrc();
   void disableCrc();
-  void enableTxInvertIQ();
-  void enableRxInvertIQ();
-  void enableInvertIQ();
-  void disableInvertIQ();
-
+  
   // deprecated
   void crc() { enableCrc(); }
   void noCrc() { disableCrc(); }
 
-  byte random();
-
   void setPins(int ss = LORA_DEFAULT_SS_PIN, int reset = LORA_DEFAULT_RESET_PIN, int dio0 = LORA_DEFAULT_DIO0_PIN);
-  void setSPIFrequency(uint32_t frequency);
-  void sendPackets();
   
-  void dumpRegisters(Stream& out);
   void createPacketAndSend(uint16_t dst, uint8_t* payload, uint8_t payloadSize);
   
-    /**
-     * @brief Get the Instance of the LoRaMesher
-     *
-     * @return LoraMesher&
-     */
-    static LoRaClass& getInstance() {
+  static LoRaClass& getInstance() {
         static LoRaClass instance;
         return instance;
-    };  
+  };  
 
-
-   /**
-     * @brief Create a Packet And Send it
-     *
-     * @tparam T
-     * @param dst Destination
-     * @param payload Payload of type T
-     * @param payloadSize Length of the payload in T
-     */
     template <typename T>
     void createPacketAndSend(uint16_t dst, T* payload, uint8_t payloadSize) {
         //Cannot send an empty packet
@@ -219,19 +186,38 @@ public:
 
     }
 
+  void setTxPowerMax(int level);
 
+  #if 0
+  static void onDio0Rise();
+ 
+  float packetSnr();
+  void handleDio0Rise();
+  void dumpRegisters(Stream& out);
+  byte random();
+  void setSPIFrequency(uint32_t frequency);
+  void enableTxInvertIQ();
+  void enableRxInvertIQ();
+  void enableInvertIQ();
+  void disableInvertIQ();
+  void setCodingRate4(int denominator);
+  void setPreambleLength(long length);
+  void setSyncWord(int sw);
+  void setTxPower(int8_t power, int8_t outputPin);
+  void setFrequency(long frequency);
+  void setSpreadingFactor(int sf);
+  void setSignalBandwidth(long sbw);
+  void sendPackets();
+  
+ #endif
+  
 
 private:
   void explicitHeaderMode();
   void implicitHeaderMode();
-
-  void handleDio0Rise();
-
   uint8_t readRegister(uint8_t address);
   void writeRegister(uint8_t address, uint8_t value);
   uint8_t singleTransfer(uint8_t address, uint8_t value);
-  static void onDio0Rise();
-
   
 
   SPISettings _spiSettings;

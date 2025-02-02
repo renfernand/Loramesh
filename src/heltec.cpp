@@ -109,7 +109,7 @@ void Heltec_ESP32::DisplayShow3(char *pframe)
 	uint32_t rssi=0;
 
 	//Heltec.display->clear();
-	//Heltec.display->setFont(ArialMT_Plain_10);
+	Heltec.display->setFont(ArialMT_Plain_16);
 
 	memset(buf,0x20,sizeof(buf));
 	sprintf(buf, "%s", pframe);  
@@ -117,5 +117,28 @@ void Heltec_ESP32::DisplayShow3(char *pframe)
 	Heltec.display->display();
 
 }
+
+void Heltec_ESP32::DisplayShowAll(char *line1, char *line2, char *line3) 
+{
+	char buf[20];
+
+	Heltec.display->clear();
+	Heltec.display->setFont(ArialMT_Plain_16);
+
+	memset(buf,0x20,sizeof(buf));
+	sprintf(buf, "%s", line1);  
+	Heltec.display->drawString(0, 0, buf);
+
+	memset(buf,0x20,sizeof(buf));
+	sprintf(buf, "%s", line2);  
+	Heltec.display->drawString(0, 20, buf);
+
+	memset(buf,0x20,sizeof(buf));
+	sprintf(buf, "%s", line3);  
+	Heltec.display->drawString(0, 40, buf);
+
+	Heltec.display->display();
+}
+
 
 Heltec_ESP32 Heltec;

@@ -23,15 +23,14 @@ class Heltec_ESP32 {
     Heltec_ESP32();
 	~Heltec_ESP32();
 
-//  void begin(bool DisplayEnable=true, bool LoRaEnable=true, bool SerialEnable=true, bool PABOOST=true, long BAND=470E6);
-//  void begin(bool DisplayEnable, bool LoRaEnable, bool SerialEnable, bool PABOOST, long BAND);
     void begin();
 
     void DisplayClear(void);
     void DisplayShow1(char *pframe);
     void DisplayShow2(char *pframe);
     void DisplayShow3(char *pframe);
-
+    void DisplayShowAll(char *line1, char *line2, char *line3);
+    
 #if defined( WIFI_Kit_32 ) || defined( WIFI_LoRa_32 ) || defined( WIFI_LoRa_32_V2 ) || defined( Wireless_Stick ) || defined( WIFI_LoRa_32_V3 )
     SSD1306Wire *display;
 #endif

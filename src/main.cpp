@@ -19,6 +19,11 @@ extern volatile bool messageReceived;
 
 char rxpacket[BUFFER_SIZE];
 
+#if DISPLAY_ENABLE  
+char display_line1[20];
+char display_line2[20];
+#endif
+
 statemac nextstate;
 uint16_t idx_response=0;
 uint8_t send_pct = 0;
@@ -35,7 +40,6 @@ uint32_t previous_FR = 0; // Previous free-running time from ESP32 B
 uint32_t current_FR = 0;  // Current free-running time from ESP32 B
 int32_t drift = 0;         // Measured drift
 float adjustedPeriod = EXPECTED_PERIOD_MS; // Adjusted period for ESP32 A
-
 
 void AppTask(void * parameter) {
 
@@ -87,11 +91,23 @@ void AppTask(void * parameter) {
 
 //calcula a quantidade de polls e erros
 void setindpolls(){
-    uint16_t lastseqnum = loramesh.getLastSeqNum();
-    if (lastseqnum == loramesh.lastpkt.seqnum){
+    uint16_t lastmyseqnum = loramesh.getLastSeqNum();
+    uint16_t lastpacketseqnum = loramesh.getLastPctSeqNum();
+    if (lastmyseqnum == lastpacketseqnum){
         idx_response++;
+        log_i("Tx.sn=%d Rx.sn=%d Rx.cnt=%d ",lastmyseqnum, lastpacketseqnum, idx_response);
+
+        #if DISPLAY_ENABLE  
+        {
+            char display_line3[20];
+            sprintf(display_line3,"Tx=%d Rx=%d", lastmyseqnum, idx_response);
+            Heltec.DisplayShowAll(display_line1,display_line2,display_line3);
+            //log_i("%s",display_line3);
+        }    
+        #endif
+
     }
-    log_i("Polls=%d Resp=%d",lastseqnum, idx_response);
+
 
 }
 
@@ -100,6 +116,15 @@ void toogleled(uint8_t ledpin){
    ledtoogle = !ledtoogle;
    digitalWrite(ledpin, ledtoogle);
 }
+
+void ledblink(uint8_t ledpin){
+   
+   digitalWrite(ledpin, HIGH);
+   delay(100);
+   digitalWrite(ledpin, LOW);
+
+}
+
 #if 0
 void standby() {
     //Get actual priority
@@ -171,21 +196,18 @@ void setup()
      //print mydd
     #if DISPLAY_ENABLE  
     {
-        char buf[20];
-
         Heltec.DisplayClear();
 
-        sprintf(buf,"SN=%x ",loramesh.mydd.devserialnumber);
-        Heltec.DisplayShow1(buf);
-        
-        if (loramesh.mydd.devtype == DEV_TYPE_ROUTER)
-            sprintf(buf,"DevType = RT ");
-        else
-            sprintf(buf,"DevType = ED ");
-        Heltec.DisplayShow2(buf);
-
-        sprintf(buf,"Addr=%x ", loramesh.mydd.devaddr);
-        Heltec.DisplayShow3(buf);
+        if (loramesh.mydd.devtype == DEV_TYPE_ROUTER) {
+            sprintf(display_line1,"RT=%x ",loramesh.mydd.devserialnumber);
+            Heltec.DisplayShow1(display_line1);
+        }
+        else {
+            sprintf(display_line1,"ED=%x ",loramesh.mydd.devserialnumber);
+            Heltec.DisplayShow1(display_line1);
+        }
+        sprintf(display_line2,"Addr=%x ", loramesh.mydd.devaddr);
+        Heltec.DisplayShow2(display_line2);
     }
     #endif
 
@@ -402,12 +424,27 @@ void loop() {
         send_pct = 0;
         //Envia o pacote para informar ao Slave que queremos receber os dados
         if (loramesh.mydd.devtype == DEV_TYPE_ROUTER){
+            uint16_t lastmyseqnum = loramesh.getLastSeqNum();  
             framesize = loramesh.sendPacketReq(lastscantime_ms);
+            log_i("Tx.seqnum=%d",lastmyseqnum);
         }
         else{
+            uint16_t lastpctseqnum = loramesh.getLastPctSeqNum();  
             rtaddr = loramesh.getrouteaddr();
             framesize = loramesh.sendPacketRes(rtaddr,lastscantime_ms);
+            //toogleled(LED_BUILTIN);
+            ledblink(LED_BUILTIN);
+
+            #if DISPLAY_ENABLE  
+            {
+                char display_line3[20];
+                sprintf(display_line3,"Seq=%d", lastpctseqnum);
+                Heltec.DisplayShowAll(display_line1,display_line2,display_line3);
+                log_i("%s",display_line3);
+            }    
+            #endif
         }
+
     }
 
     delay(1);
